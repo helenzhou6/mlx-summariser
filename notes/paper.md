@@ -16,7 +16,7 @@ The dataset contains 64,832 summary comparisons on the TL;DR dataset, as well as
 - define our ground-truth task as producing a model that generates summaries fewer than 48 tokens long that are as good as possible, according to our judgments
 
 ## Reinforcement Learning from Human Feedback (RLHF) architecture
-<img width="1155" height="628" alt="Screenshot 2025-07-14 at 13 03 36" src="https://github.com/user-attachments/assets/7c72ba7a-5394-4c23-a5e9-3efe03d2db0b" />
+<img width="1018" height="694" alt="Screenshot 2025-07-14 at 14 39 10" src="https://github.com/user-attachments/assets/27513f07-6918-4215-96ee-a02d8d99e3f8" />
 
 -  All models are Transformer decoders (in the style of GPT-3) - since support autoregressive text generation
 Needed:
@@ -28,6 +28,8 @@ Needed:
 - Controlling for summary length needs to be taken into consideration (trade-off between conciseness and coverage)
 
 ## High level architecture
+<img width="1155" height="628" alt="Screenshot 2025-07-14 at 13 03 36" src="https://github.com/user-attachments/assets/7c72ba7a-5394-4c23-a5e9-3efe03d2db0b" />
+
 0. Start with initial policy that is fine-tuned via supervised learning on the desired dataset.  Then 3 steps repeated iteratively:
 - Step 1: Collect samples from existing policies and send comparisons to human evaluators. Human evaluator select best summary out of the two.
 - Step 2: Train a reward model to predict the log odds that this summary is better
