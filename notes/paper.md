@@ -92,3 +92,4 @@ closely capture the behavior we care about. ROUGE has received criticism for poo
 - **few-shot learning** = type of machine learning where a model learns to perform a task using only a small number of examples (called “shots”) provided at inference time, not during training. E.g. What is the capital of France/Germany/Italy?
 - **Kullback–Leibler (KL) divergence** = a measure of how one probability distribution differs from another.
 - **Entropy bonus** is a term added to the reinforcement learning objective to encourage the agent to maintain exploration by producing more uncertain or diverse actions rather than collapsing to **deterministic behavior** (i.e. model/agent produces same output given same input)
+- **supervised fine-tuning (SFT)** = first stage in the RLHF pipeline where a pretrained language model is fine tuned using human labelled examples in a supervised way
