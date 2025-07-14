@@ -31,7 +31,7 @@ Needed:
 <img width="1155" height="628" alt="Screenshot 2025-07-14 at 13 03 36" src="https://github.com/user-attachments/assets/7c72ba7a-5394-4c23-a5e9-3efe03d2db0b" />
 
 0. Start with initial policy that is fine-tuned via supervised learning on the desired dataset.  Then 3 steps repeated iteratively:
-- Step 1: Collect samples from existing policies and send comparisons to human evaluators. Human evaluator select best summary out of the two.
+- Step 1: Collect samples from existing policies and send comparisons to human evaluators. Human evaluator/labeller manually selects best summary out of the two.
 - Step 2: Train a reward model to predict the log odds that this summary is better
 - Step 3: Optimise a policy against the RM. Use logit output of RM to optimise using reinforcement learning (specifically PPO algorithm) 
 
@@ -59,6 +59,8 @@ Note: include a term in the reward that penalizes from too much diveragance betw
 - Uses a Trasnfromer with completely separate params from the policy 
     - Note PPO has two main components - **policy network**: decides what actions to take, **value function**: estimates how good a given state is // predicts expected future rewards. The policy and value function have different roles and might need to learn different features.
     - Keeping params sepearate allows each network to specialise without interring. 
+- PPO loss function that maps the scalar value to the multiple tokens (i.e. tokens/words across the sentence - e.g. "the" shouldn't be punished that much)
+- Also called **reward shaping**
 
 ### Paper side notes
 - Side note: "We hope the evidence from our paper motivates machine
