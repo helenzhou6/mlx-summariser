@@ -16,6 +16,8 @@ The dataset contains 64,832 summary comparisons on the TL;DR dataset, as well as
 - define our ground-truth task as producing a model that generates summaries fewer than 48 tokens long that are as good as possible, according to our judgments
 
 ## Reinforcement Learning from Human Feedback (RLHF) architecture
+<img width="1155" height="628" alt="Screenshot 2025-07-14 at 13 03 36" src="https://github.com/user-attachments/assets/7c72ba7a-5394-4c23-a5e9-3efe03d2db0b" />
+
 -  All models are Transformer decoders (in the style of GPT-3) - since support autoregressive text generation
 Needed:
 - Start with pretrained models to autoregressively predict the next token in a large text corpus. These models are 'zero-shot' baselines (by padding the context with examples of high-quality summaries from the dataset.?? ) 
