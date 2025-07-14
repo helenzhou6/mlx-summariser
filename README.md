@@ -26,3 +26,6 @@ Dataset: https://openaipublic.blob.core.windows.net/summarize-from-feedback/webs
 4. Link up the PPO/policy model and train it on the rewards model output
 5. Inference!
 At some point: either freeze layers and later swap it out with LoRa, or implement it immediately
+
+### Stretch goal
+- Potentially have it consume a PDF / paper and create an abstract
