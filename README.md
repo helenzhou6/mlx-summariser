@@ -9,3 +9,4 @@ Dataset: https://openaipublic.blob.core.windows.net/summarize-from-feedback/webs
 
 ## To run
 1. `uv sync` to download the necessary dependencies
+2. Either use `uv run <file path>`, or on VSCode use shift+command+P to select python interpretter as .venv and press play button, or `source .venv/bin/activate` to activate the python virtual env and then `python3 <file path>`
