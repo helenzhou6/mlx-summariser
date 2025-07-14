@@ -3,9 +3,22 @@
 ## Learning to summarize from human feedback (2020 paper)
 [Link to paper](https://arxiv.org/pdf/2009.01325)
 
-### Dataset released
+## Datasets
+#### Released one
 The dataset contains 64,832 summary comparisons on the TL;DR dataset, as well as our evaluation data on both TL;DR
 (comparisons and Likert scores) and CNN/DM (Likert scores).
+#### Original
+1. We use the TL;DR summarization dataset, which contains ~3 million posts from reddit.com across a variety of topics (subreddits), as well summaries of the posts written by the original poster (TL;DRs)
+2. sampled & filtered to include only posts where the human-written summaries contain between 24 and 48 tokens
+3. Final filtered dataset contains 123,169 posts, and we hold out ~5% as a validation set.
+
+## Overall aim
+- define our ground-truth task as producing a model that generates summaries fewer than 48 tokens long that are as good as possible, according to our judgments
+
+## Major things of note
+- All models are Transformer decoders (in the style of GPT-3) - since support autoregressive text generation
+
+## Reinforcement Learning from Human Feedback (RLHF) architecture
 
 ### Reward model (RM) = Training a model to optimise for human preferences:
 1. Collected a large, high-quality dataset of human comparisons between summaries / a dataset of human preferences between pairs of summaries
@@ -19,7 +32,10 @@ Finally, we train a policy via reinforcement learning (RL) to maximize the score
 3.  We can then gather more human data using samples from the resulting policy, and repeat the process
 
 ## High level architecture
-0. Start with initial policy that is fine-tuned via supervised learning on the desired dataset.  Then 2 seps repeated iteratively
+0. Start with initial policy that is fine-tuned via supervised learning on the desired dataset.  Then 3 steps repeated iteratively:
+- Step 1: Collect samples from existing policies and send comparisons to human evaluators. Human evaluator select best summary out of the two.
+- Step 2: Train a reward model to predict the log odds that this summary is better
+- Step 3: Optimise a policy against the RM. Use logit output of RM to optimise using reinforcement learning (specifically PPO algorithm) 
 
 ### Paper side notes
 - Side note: "We hope the evidence from our paper motivates machine
@@ -28,7 +44,6 @@ model behavior they actually want."
 - SCARY: Summaries from our human feedback models are preferred by our labelers to the original human demonstrations in the dataset
 - Previously: fine tuned using supervised learning. Aim: train language models on objectives that more
 closely capture the behavior we care about. ROUGE has received criticism for poor correlation with human judgements. RM outperforms other metrics e.g. ROGUE at predicting human preferences
-
 
 ## Acronyms and definitions
 - **NLP** = natural language processing
@@ -45,3 +60,4 @@ closely capture the behavior we care about. ROUGE has received criticism for poo
     - Two types: **Deterministic policy:** Always chooses the same action for a given state. VS **Stochastic policy:** Assigns probabilities to possible actions for a given state.
     - Goal in RL is to find an optimal policy that maximizes expected cumulative rewards.
 - **Cumulative rewards**: In RL, refers to the total amount of reward an agent collects over time as it interacts with the environment.
+- **Autoregressive** in text generation = model generates text one token at a time and next one based on all perviously generated tokens
