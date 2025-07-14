@@ -12,8 +12,9 @@ class Base(torch.nn.Module):
         )
     
     def forward(self, x):
-        x = self.proj(x)
-        return x + self.lora(x)
+        proj_x = self.proj(x)
+        output_lora = self.lora(x)
+        return proj_x + output_lora # residual connection
 
 base = Base()
 nums = sum(p.numel() for p in base.parameters())
