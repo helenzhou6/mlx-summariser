@@ -23,7 +23,7 @@ Dataset: https://openaipublic.blob.core.windows.net/summarize-from-feedback/webs
 [Medium blogpost](https://medium.com/@Uvwxyz/rlhf-on-a-budget-gpt-2-for-summarization-39f9d016202b)
 
 ## To Do list
-1. Fine tune Qwen3 model on the OpenAI summarize TLDR dataset. Save to wandb
+1. ✅ Fine tune Qwen3 model on the OpenAI summarize TLDR dataset. ✅ Save to wandb. Add evaluation metrics
 2. Create a rewards model based off Qwen3 pre-trained model above. Have it output a scalar. Train it on Openai summarize comparison.
 3. Look into PPO model (is it an evolution of the Qwen3 model? Do we use a pretrained PPO model like the blog?)
 4. Link up the PPO/policy model and train it on the rewards model output
