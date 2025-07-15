@@ -36,4 +36,6 @@ At some point: either freeze layers and later swap it out with LoRa, or implemen
 ### Things to look at later
 - `gate_proj` for gated MLPs (used in Qwen)
 - If we run into large batch sizes - could add `gradient_accumulation_steps`
-- Confirm max length of dataset (valid and test etc) is 550
+
+### Architecture Decisions (ADRs)
+- Despite the max number of tokens in the TLDR training dataset being 608 (and 558 in TDLR validation dataset), we set the max length in the dataset model loader to be 550. This is because only 0.1% are over 550 tokens, and having it 550 would mean less memory etc

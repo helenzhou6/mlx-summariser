@@ -9,14 +9,15 @@ from utils import get_device, init_wandb
 QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
 EPOCHS = 5
 LEARNING_RATE = 1e-5
-BATCH_SIZE = 30
+BATCH_SIZE = 5
 NUM_WORKERS = 2
+MAX_LENGTH = 550
 
 class TLDRDataset(Dataset):
-    def __init__(self, dataset, tokenizer, max_length=550):
+    def __init__(self, dataset, tokenizer):
         self.text = [sample["prompt"] + sample["label"] for sample in dataset]
         self.tokenizer = tokenizer
-        self.max_length = max_length
+        self.max_length = MAX_LENGTH
 
     def __len__(self):
         return len(self.text)
@@ -31,17 +32,29 @@ class TLDRDataset(Dataset):
             "labels": torch.tensor(enc["input_ids"]),  # teacher forcing
         }
     
-def train(model, tokenizer, train_dataloader, device, epochs, lr):
+def train(model, train_dataloader, optimiser):
     model.train()
     for epoch in range(EPOCHS):
-        total_loss = 0
+        print(f"---- EPOCH: {epoch + 1} ----")
+        running_loss = 0
         for batch_idx, batch in enumerate(tqdm(train_dataloader, desc=f"Epoch {epoch+1}")):
             input_ids = batch["input_ids"].to(model.device)
             attention_mask = batch["attention_mask"].to(model.device)
             labels = batch["labels"].to(model.device)
 
             outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-    return
+            loss = outputs.loss
+            loss.backward()
+
+            optimiser.step()
+            optimiser.zero_grad()
+
+            running_loss += loss.item()
+
+        avg_loss = running_loss / len(train_dataloader)
+
+        print(f"Epoch {epoch + 1} | Average Loss: {avg_loss:.4f}")
+        wandb.log({"epoch": epoch + 1, "train_loss": avg_loss})
 
 def main():
     device = get_device()
@@ -52,13 +65,12 @@ def main():
     # Contains prompt (post) & label (TLDR)
     tldr_train_data = load_dataset("CarperAI/openai_summarize_tldr")["train"]
     # TODO: Comment out below when not truncated
-    tldr_train_data = tldr_train_data.select(range(100))
-    train_dataset = TLDRDataset(tldr_train_data,qwen_tokenizer)
+    tldr_train_data = tldr_train_data.select(range(10))
+    train_dataset = TLDRDataset(tldr_train_data, qwen_tokenizer)
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=BATCH_SIZE,
-        shuffle=True,
-        num_workers=NUM_WORKERS
+        shuffle=True
     )
 
     qwen_model = AutoModelForCausalLM.from_pretrained(QWEN_NAME)
@@ -67,7 +79,7 @@ def main():
 
     optimiser = torch.optim.AdamW(qwen_model.parameters(), lr=LEARNING_RATE)
 
-    train(qwen_model, qwen_tokenizer, train_dataloader, device, EPOCHS, LEARNING_RATE)
+    train(qwen_model, train_dataloader, optimiser)
 
 
 if __name__ == "__main__":
