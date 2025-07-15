@@ -9,8 +9,9 @@ import os
 from peft import LoraConfig, get_peft_model
 from utils import get_device, init_wandb, save_artifact
 
-QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
-EPOCHS = 5
+# QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
+QWEN_NAME = "Qwen/Qwen1.5-0.5B"
+EPOCHS = 2
 LEARNING_RATE = 1e-5
 BATCH_SIZE = 2
 NUM_WORKERS = 8
