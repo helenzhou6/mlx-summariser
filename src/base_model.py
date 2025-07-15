@@ -22,21 +22,37 @@ MAX_GRAD_NORM = 1.0
 
 class TLDRDataset(Dataset):
     def __init__(self, dataset, tokenizer):
-        self.text = [sample["prompt"] + sample["ideal_summary"] for sample in dataset]
+        self.dataset = dataset  # Store raw dataset
         self.tokenizer = tokenizer
         self.max_length = MAX_LENGTH
 
-    def __len__(self):
-        return len(self.text)
-
     def __getitem__(self, idx):
-        enc = self.tokenizer(
-            self.text[idx], truncation=True, max_length=self.max_length, padding="max_length"
-        )
+        sample = self.dataset[idx]
+        prompt = sample["prompt"]
+        label = sample["label"]
+        
+        # Tokenize prompt once to get its length
+        prompt_tokens = self.tokenizer(prompt, add_special_tokens=False)["input_ids"]
+        prompt_length = len(prompt_tokens)
+        
+        # Tokenize full text once
+        full_text = prompt + label
+        enc = self.tokenizer(full_text, truncation=True, max_length=self.max_length, padding="max_length")
+        
+        # Create masked labels
+        labels = torch.full((self.max_length,), -100, dtype=torch.long)
+        input_ids = torch.tensor(enc["input_ids"])
+        
+        # Only predict label tokens (after prompt)
+        actual_length = (input_ids != self.tokenizer.pad_token_id).sum().item()
+        label_start = min(prompt_length, actual_length)
+        
+        labels[label_start:actual_length] = input_ids[label_start:actual_length]
+        
         return {
-            "input_ids": torch.tensor(enc["input_ids"]),
+            "input_ids": input_ids,
             "attention_mask": torch.tensor(enc["attention_mask"]),
-            "labels": torch.tensor(enc["input_ids"]),  # teacher forcing
+            "labels": labels,
         }
     
 
