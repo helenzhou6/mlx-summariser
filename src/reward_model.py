@@ -15,6 +15,7 @@ import json
 import os
 import torch
 import torch.nn as nn
+import wandb
 import torch.optim as optim
 from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader
@@ -36,6 +37,7 @@ class RewardComparisonDataset(Dataset):
     def __init__(self, tokenizer, max_length=512):
         with open(DATA_PATH, "r", encoding="utf-8") as f:
             self.data = [json.loads(line) for line in f]
+#        self.data = self.data[:2]
         self.tokenizer = tokenizer
         self.max_length = max_length
 
@@ -151,7 +153,7 @@ def train_reward_model():
         torch.save(model.state_dict(), "data/qwenRewardModel.pt")
         save_artifact("qwenRewardModel", "Reward model trained on human preferences")
 
-    model.save_pretrained("qwen3_reward_model")
+    model.base_model.save_pretrained("qwen3_reward_model")
     tokenizer.save_pretrained("qwen3_reward_model")
 
 if __name__ == "__main__":
