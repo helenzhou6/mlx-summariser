@@ -9,6 +9,7 @@ dependencies = [
     "dotenv>=0.9.9",
     "ipykernel>=6.29.5",
     "numpy==1.26",
+    "peft>=0.16.0",
     "torch==2.2.2",
     "tqdm>=4.67.1",
     "transformers>=4.53.2",

@@ -6,6 +6,7 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import wandb
 import os
+from peft import LoraConfig, get_peft_model
 from utils import get_device, init_wandb, save_artifact
 
 QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
@@ -14,7 +15,6 @@ LEARNING_RATE = 1e-5
 BATCH_SIZE = 5
 NUM_WORKERS = 2
 MAX_LENGTH = 550
-NON_FROZEN_LAYERS = 4
 MAX_GRAD_NORM = 1.0
 
 class TLDRDataset(Dataset):
@@ -36,7 +36,7 @@ class TLDRDataset(Dataset):
             "labels": torch.tensor(enc["input_ids"]),  # teacher forcing
         }
     
-    
+
 def print_sample(model, input_ids, attention_mask, labels):
     with torch.no_grad():
         # Generate output from the model
@@ -114,17 +114,17 @@ def main():
     qwen_model = AutoModelForCausalLM.from_pretrained(QWEN_NAME)
     qwen_model.to(device)
     qwen_model.config.pad_token_id = qwen_tokenizer.eos_token_id
-
-    # Freeze most layers - only train last n layers
-    total_layers = len(qwen_model.model.layers)
-    layers_to_freeze = total_layers - NON_FROZEN_LAYERS
-    for i, layer in enumerate(qwen_model.model.layers):
-        if i < layers_to_freeze:
-            for param in layer.parameters():
-                param.requires_grad = False
-    
-    print(f"Frozen {layers_to_freeze}/{total_layers} layers, training last {NON_FROZEN_LAYERS} layers")
-
+    lora_config = LoraConfig(
+        r=16, # rank - controls adapter size
+        lora_alpha=32,
+        target_models=["q_proj", "v_proj", "k_proj", "o_proj"] # attention layers
+        lora_dropout=0.1,
+        bias="none",
+        task_type="CAUSAL_LM"
+    )
+    qwen_model = get_peft_model(qwen_model, lora_config)
+    qwen_model.print_trainable_parameters()
+   
     optimiser = torch.optim.AdamW(qwen_model.parameters(), lr=LEARNING_RATE)
 
     train(qwen_model, train_dataloader, optimiser)
