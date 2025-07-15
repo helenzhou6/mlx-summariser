@@ -72,6 +72,7 @@ def print_sample(model, input_ids, attention_mask, labels, tokenizer):
             generated_text = tokenizer.decode(generated_ids[i], skip_special_tokens=True)
 
             print("\n--- Example Output ---")
+            print(f"[Input Text]: {input_text}")
             print(f"[Ground Truth]: {label_text}")
             print(f"[Generated]: {generated_text}")
             print("----------------------\n")
@@ -108,7 +109,6 @@ def train(model, train_dataloader, optimiser, tokenizer):
         print(f"Epoch {epoch + 1} | Average Loss: {avg_loss:.4f}")
         wandb.log({"epoch": epoch + 1, "train_loss": avg_loss})
 
-        os.makedirs('data', exist_ok=True)
         torch.save(model.state_dict(), "data/qwenTLDRmodel.pt")
         save_artifact("qwenTLDRmodel", "Trained summarising qwen model on Reddit TLDR dataset")
 
@@ -117,8 +117,6 @@ def main():
 
     qwen_tokenizer = AutoTokenizer.from_pretrained(QWEN_NAME, trust_remote_code=True, padding_side='left')
     qwen_tokenizer.pad_token = qwen_tokenizer.eos_token
-
-    # Contains prompt (post) & label (TLDR)
 
     tldr_train_data = []
     with open("data/train.jsonl", "r", encoding="utf-8") as file:
