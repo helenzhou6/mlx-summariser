@@ -7,6 +7,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import wandb
 import os
 from peft import LoraConfig, get_peft_model
+import json
 from utils import get_device, init_wandb, save_artifact
 
 # QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
@@ -21,7 +22,7 @@ MAX_GRAD_NORM = 1.0
 
 class TLDRDataset(Dataset):
     def __init__(self, dataset, tokenizer):
-        self.text = [sample["prompt"] + sample["label"] for sample in dataset]
+        self.text = [sample["prompt"] + sample["ideal_summary"] for sample in dataset]
         self.tokenizer = tokenizer
         self.max_length = MAX_LENGTH
 
@@ -102,9 +103,12 @@ def main():
     qwen_tokenizer.pad_token = qwen_tokenizer.eos_token
 
     # Contains prompt (post) & label (TLDR)
-    tldr_train_data = load_dataset("CarperAI/openai_summarize_tldr")["train"]
-    # TODO: Comment out below when not truncated
-    # tldr_train_data = tldr_train_data.select(range(10))
+
+    tldr_train_data = []
+    with open("data/train.jsonl", "r", encoding="utf-8") as file:
+        for line in file:
+            tldr_train_data.append(json.loads(line))
+
     train_dataset = TLDRDataset(tldr_train_data, qwen_tokenizer)
     train_dataloader = DataLoader(
         train_dataset,

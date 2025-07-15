@@ -11,8 +11,11 @@ Dataset: https://openaipublic.blob.core.windows.net/summarize-from-feedback/webs
 - Openai summarize comparison: https://huggingface.co/datasets/CarperAI/openai_summarize_comparisons
 - OpenAI summarize TLDR: https://huggingface.co/datasets/CarperAI/openai_summarize_tldr
 
+## GPU - set up
+0. If on GPU, can run `chmod +x ./setup.sh` and then `./setup.sh` to set the env up
+1. Copy over your .env file (to make sure you can log into wandb etc)
+
 ## Dev - set up
-0. If on GPU, can yun `chmod +x ./setup.sh` and then `./setup.sh` to set the env up
 1. `uv sync` to download the necessary dependencies (skip this step if you've done the above in GPU)
 2. Either use `uv run <file path>`, or on VSCode use shift+command+P to select python interpretter as .venv and press play button, or `source .venv/bin/activate` to activate the python virtual env and then `python3 <file path>`
 
