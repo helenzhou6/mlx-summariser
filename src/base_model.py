@@ -12,10 +12,11 @@ from utils import get_device, init_wandb, save_artifact
 QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
 EPOCHS = 5
 LEARNING_RATE = 1e-5
-BATCH_SIZE = 5
-NUM_WORKERS = 2
+BATCH_SIZE = 2
+NUM_WORKERS = 8
 MAX_LENGTH = 550
 MAX_GRAD_NORM = 1.0
+
 
 class TLDRDataset(Dataset):
     def __init__(self, dataset, tokenizer):
@@ -43,7 +44,7 @@ def print_sample(model, input_ids, attention_mask, labels, tokenizer):
         generated_ids = model.generate(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            max_length=MAX_LENGTH
+            max_new_tokens=MAX_LENGTH
         )
 
         # Decode original prompt + label
@@ -53,13 +54,12 @@ def print_sample(model, input_ids, attention_mask, labels, tokenizer):
             generated_text = tokenizer.decode(generated_ids[i], skip_special_tokens=True)
 
             print("\n--- Example Output ---")
-            print(f"[Prompt + Label]: {input_text}")
             print(f"[Ground Truth]: {label_text}")
             print(f"[Generated]: {generated_text}")
             print("----------------------\n")
     
 
-def train(model, train_dataloader, optimiser):
+def train(model, train_dataloader, optimiser, tokenizer):
     model.train()
     for epoch in range(EPOCHS):
         print(f"---- EPOCH: {epoch + 1} ----")
@@ -81,7 +81,7 @@ def train(model, train_dataloader, optimiser):
             
             if batch_idx == 0:
                 model.eval()
-                print_sample(model, input_ids, attention_mask, labels)
+                print_sample(model, input_ids, attention_mask, labels, tokenizer)
                 
             model.train()
 
@@ -97,7 +97,7 @@ def train(model, train_dataloader, optimiser):
 def main():
     device = get_device()
 
-    qwen_tokenizer = AutoTokenizer.from_pretrained(QWEN_NAME, trust_remote_code=True)
+    qwen_tokenizer = AutoTokenizer.from_pretrained(QWEN_NAME, trust_remote_code=True, padding_side='left')
     qwen_tokenizer.pad_token = qwen_tokenizer.eos_token
 
     # Contains prompt (post) & label (TLDR)
@@ -108,7 +108,8 @@ def main():
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=BATCH_SIZE,
-        shuffle=True
+        shuffle=True,
+        pin_memory=True
     )
 
     qwen_model = AutoModelForCausalLM.from_pretrained(QWEN_NAME)
@@ -127,7 +128,7 @@ def main():
    
     optimiser = torch.optim.AdamW(qwen_model.parameters(), lr=LEARNING_RATE)
 
-    train(qwen_model, train_dataloader, optimiser)
+    train(qwen_model, train_dataloader, optimiser, qwen_tokenizer)
 
 if __name__ == "__main__":
     init_wandb(config={
