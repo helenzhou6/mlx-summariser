@@ -10,6 +10,7 @@ dependencies = [
     "ipykernel>=6.29.5",
     "numpy==1.26",
     "torch==2.2.2",
+    "tqdm>=4.67.1",
     "transformers>=4.53.2",
     "wandb>=0.21.0",
 ]

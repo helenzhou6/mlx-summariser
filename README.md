@@ -11,10 +11,13 @@ Dataset: https://openaipublic.blob.core.windows.net/summarize-from-feedback/webs
 - Openai summarize comparison: https://huggingface.co/datasets/CarperAI/openai_summarize_comparisons
 - OpenAI summarize TLDR: https://huggingface.co/datasets/CarperAI/openai_summarize_tldr
 
-## To run
+## Dev - set up
 0. If on GPU, can yun `chmod +x ./setup.sh` and then `./setup.sh` to set the env up
 1. `uv sync` to download the necessary dependencies
 2. Either use `uv run <file path>`, or on VSCode use shift+command+P to select python interpretter as .venv and press play button, or `source .venv/bin/activate` to activate the python virtual env and then `python3 <file path>`
+
+### Running it all:
+1. Run `uv run base_model.py` - the aim is that it will fine tune Qwen3-0.6B-Base on the OpenAI summarize reddit TLDR dataset. It will upload this base model to wandb.
 
 ## Resources
 [Medium blogpost](https://medium.com/@Uvwxyz/rlhf-on-a-budget-gpt-2-for-summarization-39f9d016202b)
@@ -29,3 +32,8 @@ At some point: either freeze layers and later swap it out with LoRa, or implemen
 
 ### Stretch goal
 - Potentially have it consume a PDF / paper and create an abstract
+
+### Things to look at later
+- `gate_proj` for gated MLPs (used in Qwen)
+- If we run into large batch sizes - could add `gradient_accumulation_steps`
+- Confirm max length of dataset (valid and test etc) is 550
