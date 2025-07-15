@@ -37,7 +37,7 @@ class TLDRDataset(Dataset):
         }
     
 
-def print_sample(model, input_ids, attention_mask, labels):
+def print_sample(model, input_ids, attention_mask, labels, tokenizer):
     with torch.no_grad():
         # Generate output from the model
         generated_ids = model.generate(
@@ -48,9 +48,9 @@ def print_sample(model, input_ids, attention_mask, labels):
 
         # Decode original prompt + label
         for i in range(min(1, input_ids.size(0))):  # only show first sample
-            input_text = model.tokenizer.decode(input_ids[i], skip_special_tokens=True)
-            label_text = model.tokenizer.decode(labels[i], skip_special_tokens=True)
-            generated_text = model.tokenizer.decode(generated_ids[i], skip_special_tokens=True)
+            input_text = tokenizer.decode(input_ids[i], skip_special_tokens=True)
+            label_text = tokenizer.decode(labels[i], skip_special_tokens=True)
+            generated_text = tokenizer.decode(generated_ids[i], skip_special_tokens=True)
 
             print("\n--- Example Output ---")
             print(f"[Prompt + Label]: {input_text}")
@@ -103,7 +103,7 @@ def main():
     # Contains prompt (post) & label (TLDR)
     tldr_train_data = load_dataset("CarperAI/openai_summarize_tldr")["train"]
     # TODO: Comment out below when not truncated
-    tldr_train_data = tldr_train_data.select(range(10))
+    # tldr_train_data = tldr_train_data.select(range(10))
     train_dataset = TLDRDataset(tldr_train_data, qwen_tokenizer)
     train_dataloader = DataLoader(
         train_dataset,
@@ -117,7 +117,7 @@ def main():
     lora_config = LoraConfig(
         r=16, # rank - controls adapter size
         lora_alpha=32,
-        target_models=["q_proj", "v_proj", "k_proj", "o_proj"], # attention layers
+        target_modules=["q_proj", "v_proj", "k_proj", "o_proj"], # attention layers
         lora_dropout=0.1,
         bias="none",
         task_type="CAUSAL_LM"
