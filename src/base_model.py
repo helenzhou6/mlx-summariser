@@ -4,7 +4,8 @@ import torch
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import wandb
-from utils import get_device, init_wandb
+import os
+from utils import get_device, init_wandb, save_artifact
 
 QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
 EPOCHS = 5
@@ -56,6 +57,10 @@ def train(model, train_dataloader, optimiser):
         print(f"Epoch {epoch + 1} | Average Loss: {avg_loss:.4f}")
         wandb.log({"epoch": epoch + 1, "train_loss": avg_loss})
 
+        os.makedirs('data', exist_ok=True)
+        torch.save(model.state_dict(), "data/qwenTLDRmodel.pt")
+        save_artifact("qwenTLDRmodel", "Trained summarising qwen model on Reddit TLDR dataset")
+
 def main():
     device = get_device()
 
@@ -80,7 +85,6 @@ def main():
     optimiser = torch.optim.AdamW(qwen_model.parameters(), lr=LEARNING_RATE)
 
     train(qwen_model, train_dataloader, optimiser)
-
 
 if __name__ == "__main__":
     init_wandb(config={
