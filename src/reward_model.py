@@ -35,16 +35,8 @@ class RewardComparisonDataset(Dataset):
     def __getitem__(self, idx):
         item = self.data[idx]
         prompt = item["prompt"]
-        summary_a = item["choice_0"]
-        summary_b = item["choice_1"]
-        rank_a = item["choice_0_rank"]
-        rank_b = item["choice_1_rank"]
-
-        # Ensure preferred summary comes first
-        if rank_a < rank_b:
-            chosen, rejected = summary_a, summary_b
-        else:
-            chosen, rejected = summary_b, summary_a
+        chosen = item["chosen"]
+        rejected = item["rejected"]
 
         def encode(text):
             return self.tokenizer(
