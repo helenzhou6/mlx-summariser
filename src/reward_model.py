@@ -22,6 +22,12 @@ from tqdm import tqdm
 import os
 import wandb
 from utils import get_device, init_wandb, save_artifact  # assumed existing
+from transformers import AutoModelForCausalLM
+from peft import LoraConfig, get_peft_model
+import torch.nn as nn
+
+torch.cuda.empty_cache()
+NUM_WORKERS = 8
 
 # Step 1 & 2: Load and format reward data
 class RewardComparisonDataset(Dataset):
@@ -62,7 +68,21 @@ class RewardComparisonDataset(Dataset):
 class RewardModel(nn.Module):
     def __init__(self, base_model_name):
         super().__init__()
+        # Load base model
         self.base_model = AutoModelForCausalLM.from_pretrained(base_model_name, trust_remote_code=True)
+
+        # Apply LoRA
+        lora_config = LoraConfig(
+            r=4,  # low-rank dimension
+            lora_alpha=8,
+            target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],  # attention layers
+            lora_dropout=0.1,
+            bias="none",
+            task_type="CAUSAL_LM"
+        )
+        self.base_model = get_peft_model(self.base_model, lora_config)
+
+        # Add value head
         hidden_size = self.base_model.config.hidden_size
         self.value_head = nn.Linear(hidden_size, 1)
 
@@ -73,12 +93,18 @@ class RewardModel(nn.Module):
             output_hidden_states=True,
             return_dict=True
         )
-        last_hidden = outputs.hidden_states[-1]
+        last_hidden = outputs.hidden_states[-1]  # shape: (batch_size, seq_len, hidden_size)
+
+        # Index of the last non-pad token
         final_token_index = attention_mask.sum(dim=1) - 1
         final_token_index = final_token_index.unsqueeze(1).unsqueeze(2)
         final_token_index = final_token_index.expand(-1, 1, last_hidden.size(-1))
+
+        # Gather final hidden state
         final_hidden = last_hidden.gather(1, final_token_index).squeeze(1)
-        reward = self.value_head(final_hidden).squeeze(-1)
+
+        # Map to scalar reward
+        reward = self.value_head(final_hidden).squeeze(-1)  # shape: (batch_size,)
         return reward
 
 # Step 4: Pairwise loss
@@ -89,17 +115,30 @@ def pairwise_loss(chosen_reward, rejected_reward):
 def train_reward_model():
     QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
     EPOCHS = 3
-    BATCH_SIZE = 16
-    LEARNING_RATE = 5e-6
+    BATCH_SIZE = 2
+    LEARNING_RATE = 1e-5
     DEVICE = get_device()
 
     tokenizer = AutoTokenizer.from_pretrained(QWEN_NAME, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
 
     dataset = RewardComparisonDataset(tokenizer)
-    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+    dataloader = DataLoader(
+        dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=NUM_WORKERS,
+        pin_memory=True
+    )
 
     model = RewardModel(QWEN_NAME).to(DEVICE)
+    model.base_model.get_input_embeddings().requires_grad_(False)
+
+    # Freeze base model weights (LoRA only updates adapters and value head)
+    model.base_model.eval()
+    for param in model.base_model.parameters():
+        param.requires_grad = False
+
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
 
     model.train()
@@ -135,6 +174,7 @@ def train_reward_model():
     tokenizer.save_pretrained("qwen3_reward_model")
 
 if __name__ == "__main__":
-    init_wandb(config={"epochs": 3, "learning_rate": 5e-6})
+    init_wandb(config={"epochs": 3, "learning_rate": 1e-5})
     train_reward_model()
     wandb.finish()
+
