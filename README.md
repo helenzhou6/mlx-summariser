@@ -13,7 +13,7 @@ Dataset: https://openaipublic.blob.core.windows.net/summarize-from-feedback/webs
 
 ## Dev - set up
 0. If on GPU, can yun `chmod +x ./setup.sh` and then `./setup.sh` to set the env up
-1. `uv sync` to download the necessary dependencies
+1. `uv sync` to download the necessary dependencies (skip this step if you've done the above in GPU)
 2. Either use `uv run <file path>`, or on VSCode use shift+command+P to select python interpretter as .venv and press play button, or `source .venv/bin/activate` to activate the python virtual env and then `python3 <file path>`
 
 ### Running it all:
@@ -23,8 +23,8 @@ Dataset: https://openaipublic.blob.core.windows.net/summarize-from-feedback/webs
 [Medium blogpost](https://medium.com/@Uvwxyz/rlhf-on-a-budget-gpt-2-for-summarization-39f9d016202b)
 
 ## To Do list
-1. ✅ Fine tune Qwen3 model on the OpenAI summarize TLDR dataset. ✅ Save to wandb. Add evaluation metrics
-2. Create a rewards model based off Qwen3 pre-trained model above. Have it output a scalar. Train it on Openai summarize comparison.
+1. ✅ Fine tune Qwen3 model on the OpenAI summarize TLDR dataset. ✅ Save to wandb. Add a sample every epoch to demonstrate the output (add to wandb?). Add evaluation metrics
+2. Create a rewards model based off Qwen3 pre-trained model. Have it output a scalar. Train it on Openai summarize comparison.
 3. Look into PPO model (is it an evolution of the Qwen3 model? Do we use a pretrained PPO model like the blog?)
 4. Link up the PPO/policy model and train it on the rewards model output
 5. Inference!
