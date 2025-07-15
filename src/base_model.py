@@ -10,8 +10,8 @@ from peft import LoraConfig, get_peft_model
 import json
 from utils import get_device, init_wandb, save_artifact
 
-# QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
-QWEN_NAME = "Qwen/Qwen1.5-0.5B"
+QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
+# QWEN_NAME = "Qwen/Qwen1.5-0.5B"
 EPOCHS = 2
 LEARNING_RATE = 1e-5
 BATCH_SIZE = 2
@@ -25,6 +25,9 @@ class TLDRDataset(Dataset):
         self.dataset = dataset  # Store raw dataset
         self.tokenizer = tokenizer
         self.max_length = MAX_LENGTH
+
+    def __len__(self):
+        return len(self.dataset)
 
     def __getitem__(self, idx):
         sample = self.dataset[idx]
