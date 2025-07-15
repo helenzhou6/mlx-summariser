@@ -32,7 +32,7 @@ class TLDRDataset(Dataset):
     def __getitem__(self, idx):
         sample = self.dataset[idx]
         prompt = sample["prompt"]
-        label = sample["label"]
+        label = sample["ideal_summary"]
         
         # Tokenize prompt once to get its length
         prompt_tokens = self.tokenizer(prompt, add_special_tokens=False)["input_ids"]
@@ -71,7 +71,11 @@ def print_sample(model, input_ids, attention_mask, labels, tokenizer):
         # Decode original prompt + label
         for i in range(min(1, input_ids.size(0))):  # only show first sample
             input_text = tokenizer.decode(input_ids[i], skip_special_tokens=True)
-            label_text = tokenizer.decode(labels[i], skip_special_tokens=True)
+            
+            # Filter out -100 tokens from labels before decoding
+            valid_labels = labels[i][labels[i] != -100]
+            label_text = tokenizer.decode(valid_labels, skip_special_tokens=True) if len(valid_labels) > 0 else ""
+            
             generated_text = tokenizer.decode(generated_ids[i], skip_special_tokens=True)
 
             print("\n--- Example Output ---")
