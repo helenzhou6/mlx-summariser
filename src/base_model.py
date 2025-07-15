@@ -36,6 +36,29 @@ class TLDRDataset(Dataset):
             "labels": torch.tensor(enc["input_ids"]),  # teacher forcing
         }
     
+    
+def print_sample(model, input_ids, attention_mask, labels):
+    with torch.no_grad():
+        # Generate output from the model
+        generated_ids = model.generate(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            max_length=MAX_LENGTH
+        )
+
+        # Decode original prompt + label
+        for i in range(min(1, input_ids.size(0))):  # only show first sample
+            input_text = model.tokenizer.decode(input_ids[i], skip_special_tokens=True)
+            label_text = model.tokenizer.decode(labels[i], skip_special_tokens=True)
+            generated_text = model.tokenizer.decode(generated_ids[i], skip_special_tokens=True)
+
+            print("\n--- Example Output ---")
+            print(f"[Prompt + Label]: {input_text}")
+            print(f"[Ground Truth]: {label_text}")
+            print(f"[Generated]: {generated_text}")
+            print("----------------------\n")
+    
+
 def train(model, train_dataloader, optimiser):
     model.train()
     for epoch in range(EPOCHS):
@@ -55,6 +78,12 @@ def train(model, train_dataloader, optimiser):
             optimiser.zero_grad()
 
             running_loss += loss.item()
+            
+            if batch_idx == 0:
+                model.eval()
+                print_sample(model, input_ids, attention_mask, labels)
+                
+            model.train()
 
         avg_loss = running_loss / len(train_dataloader)
 
