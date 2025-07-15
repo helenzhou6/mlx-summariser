@@ -12,8 +12,6 @@ Steps:
 5. Save the trained reward model (this will be frozen during the PPO fine-tuning of the Qwen policy model)
 '''
 
-# reward_model_training.py
-
 from datasets import load_dataset
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -21,6 +19,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
+import os
+import wandb
+from utils import get_device, init_wandb, save_artifact  # assumed existing
 
 # Step 1 & 2: Load and format reward data
 class RewardComparisonDataset(Dataset):
@@ -47,7 +48,6 @@ class RewardComparisonDataset(Dataset):
                 return_tensors="pt"
             )
 
-        # Format: prompt + summary (same as in policy training)
         chosen_input = encode(prompt + chosen)
         rejected_input = encode(prompt + rejected)
 
@@ -73,17 +73,12 @@ class RewardModel(nn.Module):
             output_hidden_states=True,
             return_dict=True
         )
-        last_hidden = outputs.hidden_states[-1]  # (batch_size, seq_len, hidden_size)
-
-        # Get final non-padding token for each example
+        last_hidden = outputs.hidden_states[-1]
         final_token_index = attention_mask.sum(dim=1) - 1
         final_token_index = final_token_index.unsqueeze(1).unsqueeze(2)
         final_token_index = final_token_index.expand(-1, 1, last_hidden.size(-1))
-
-        # Grab final hidden state of last non-pad token
         final_hidden = last_hidden.gather(1, final_token_index).squeeze(1)
-
-        reward = self.value_head(final_hidden).squeeze(-1)  # (batch_size,)
+        reward = self.value_head(final_hidden).squeeze(-1)
         return reward
 
 # Step 4: Pairwise loss
@@ -96,9 +91,8 @@ def train_reward_model():
     EPOCHS = 3
     BATCH_SIZE = 16
     LEARNING_RATE = 5e-6
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    DEVICE = get_device()
 
-    # Tokenizer setup (same as policy model)
     tokenizer = AutoTokenizer.from_pretrained(QWEN_NAME, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
 
@@ -128,11 +122,19 @@ def train_reward_model():
 
             total_loss += loss.item()
 
-        print(f"Epoch {epoch+1} - Avg Loss: {total_loss / len(dataloader)}")
+        avg_loss = total_loss / len(dataloader)
+        print(f"Epoch {epoch+1} | Average Loss: {avg_loss:.4f}")
+        wandb.log({"epoch": epoch + 1, "reward_train_loss": avg_loss})
 
-    # Step 5: Save reward model (to use during PPO)
+        os.makedirs("data", exist_ok=True)
+        torch.save(model.state_dict(), "data/qwenRewardModel.pt")
+        save_artifact("qwenRewardModel", "Reward model trained on human preference pairs")
+
+    # Save entire model + tokenizer for PPO
     model.save_pretrained("qwen3_reward_model")
     tokenizer.save_pretrained("qwen3_reward_model")
 
 if __name__ == "__main__":
+    init_wandb(config={"epochs": 3, "learning_rate": 5e-6})
     train_reward_model()
+    wandb.finish()
