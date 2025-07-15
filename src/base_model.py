@@ -117,7 +117,7 @@ def main():
     lora_config = LoraConfig(
         r=16, # rank - controls adapter size
         lora_alpha=32,
-        target_models=["q_proj", "v_proj", "k_proj", "o_proj"] # attention layers
+        target_models=["q_proj", "v_proj", "k_proj", "o_proj"], # attention layers
         lora_dropout=0.1,
         bias="none",
         task_type="CAUSAL_LM"
