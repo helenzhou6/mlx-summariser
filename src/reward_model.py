@@ -11,28 +11,31 @@ Steps:
     - Use the pairwise ranking loss to train the model to assign a higher score to preferred summary
 5. Save the trained reward model (this will be frozen during the PPO fine-tuning of the Qwen policy model)
 '''
-
-from datasets import load_dataset
-from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, AutoModelForCausalLM
+import json
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
-import os
-import wandb
-from utils import get_device, init_wandb, save_artifact  # assumed existing
-from transformers import AutoModelForCausalLM
+from torch.utils.data import Dataset, DataLoader
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig, get_peft_model
-import torch.nn as nn
+from utils import get_device, init_wandb, save_artifact
 
-torch.cuda.empty_cache()
+# === Config ===
+QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
+DATA_PATH = "../data/comparisons_train.jsonl"
+EPOCHS = 2
+BATCH_SIZE = 2
+LEARNING_RATE = 1e-5
+MAX_LENGTH = 550
 NUM_WORKERS = 8
 
-# Step 1 & 2: Load and format reward data
+# === Dataset ===
 class RewardComparisonDataset(Dataset):
-    def __init__(self, tokenizer, max_length=550):
-        self.data = load_dataset("CarperAI/openai_summarize_comparisons", split="train")
+    def __init__(self, tokenizer, max_length=512):
+        with open(DATA_PATH, "r", encoding="utf-8") as f:
+            self.data = [json.loads(line) for line in f]
         self.tokenizer = tokenizer
         self.max_length = max_length
 
@@ -41,9 +44,9 @@ class RewardComparisonDataset(Dataset):
 
     def __getitem__(self, idx):
         item = self.data[idx]
-        prompt = item["prompt"]
-        chosen = item["chosen"]
-        rejected = item["rejected"]
+        prompt = item["post"]
+        chosen = item["pos_ex"]
+        rejected = item["neg_ex"]
 
         def encode(text):
             return self.tokenizer(
@@ -64,23 +67,22 @@ class RewardComparisonDataset(Dataset):
             "attention_mask_rejected": rejected_input["attention_mask"].squeeze(),
         }
 
-# Step 3: Reward model (Qwen decoder + value head)
+# === Reward Model ===
 class RewardModel(nn.Module):
     def __init__(self, base_model_name):
         super().__init__()
-        # Load base model
-        self.base_model = AutoModelForCausalLM.from_pretrained(base_model_name, trust_remote_code=True)
 
-        # Apply LoRA
+        base_model = AutoModelForCausalLM.from_pretrained(base_model_name, trust_remote_code=True)
         lora_config = LoraConfig(
-            r=4,  # low-rank dimension
-            lora_alpha=8,
-            target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],  # attention layers
+            r=16,
+            lora_alpha=32,
+            target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
             lora_dropout=0.1,
             bias="none",
             task_type="CAUSAL_LM"
         )
-        self.base_model = get_peft_model(self.base_model, lora_config)
+        self.base_model = get_peft_model(base_model, lora_config)
+        self.base_model.print_trainable_parameters()
 
         # Add value head
         hidden_size = self.base_model.config.hidden_size
@@ -93,36 +95,24 @@ class RewardModel(nn.Module):
             output_hidden_states=True,
             return_dict=True
         )
-        last_hidden = outputs.hidden_states[-1]  # shape: (batch_size, seq_len, hidden_size)
-
-        # Index of the last non-pad token
+        last_hidden = outputs.hidden_states[-1]  # (batch, seq_len, hidden_size)
         final_token_index = attention_mask.sum(dim=1) - 1
         final_token_index = final_token_index.unsqueeze(1).unsqueeze(2)
         final_token_index = final_token_index.expand(-1, 1, last_hidden.size(-1))
-
-        # Gather final hidden state
         final_hidden = last_hidden.gather(1, final_token_index).squeeze(1)
+        return self.value_head(final_hidden).squeeze(-1)
 
-        # Map to scalar reward
-        reward = self.value_head(final_hidden).squeeze(-1)  # shape: (batch_size,)
-        return reward
-
-# Step 4: Pairwise loss
+# === Loss ===
 def pairwise_loss(chosen_reward, rejected_reward):
     return -torch.log(torch.sigmoid(chosen_reward - rejected_reward)).mean()
 
-# Step 4: Training loop
+# === Training ===
 def train_reward_model():
-    QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
-    EPOCHS = 3
-    BATCH_SIZE = 2
-    LEARNING_RATE = 1e-5
-    DEVICE = get_device()
-
+    device = get_device()
     tokenizer = AutoTokenizer.from_pretrained(QWEN_NAME, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
 
-    dataset = RewardComparisonDataset(tokenizer)
+    dataset = RewardComparisonDataset(tokenizer, max_length=MAX_LENGTH)
     dataloader = DataLoader(
         dataset,
         batch_size=BATCH_SIZE,
@@ -131,28 +121,20 @@ def train_reward_model():
         pin_memory=True
     )
 
-    model = RewardModel(QWEN_NAME).to(DEVICE)
-    model.base_model.get_input_embeddings().requires_grad_(False)
-
-    # Freeze base model weights (LoRA only updates adapters and value head)
-    model.base_model.eval()
-    for param in model.base_model.parameters():
-        param.requires_grad = False
-
+    model = RewardModel(QWEN_NAME).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
 
     model.train()
     for epoch in range(EPOCHS):
         total_loss = 0
         for batch in tqdm(dataloader, desc=f"Epoch {epoch+1}"):
-            input_ids_chosen = batch["input_ids_chosen"].to(DEVICE)
-            attention_mask_chosen = batch["attention_mask_chosen"].to(DEVICE)
-            input_ids_rejected = batch["input_ids_rejected"].to(DEVICE)
-            attention_mask_rejected = batch["attention_mask_rejected"].to(DEVICE)
+            input_ids_chosen = batch["input_ids_chosen"].to(device)
+            attention_mask_chosen = batch["attention_mask_chosen"].to(device)
+            input_ids_rejected = batch["input_ids_rejected"].to(device)
+            attention_mask_rejected = batch["attention_mask_rejected"].to(device)
 
             chosen_reward = model(input_ids_chosen, attention_mask_chosen)
             rejected_reward = model(input_ids_rejected, attention_mask_rejected)
-
             loss = pairwise_loss(chosen_reward, rejected_reward)
 
             optimizer.zero_grad()
@@ -167,14 +149,12 @@ def train_reward_model():
 
         os.makedirs("data", exist_ok=True)
         torch.save(model.state_dict(), "data/qwenRewardModel.pt")
-        save_artifact("qwenRewardModel", "Reward model trained on human preference pairs")
+        save_artifact("qwenRewardModel", "Reward model trained on human preferences")
 
-    # Save entire model + tokenizer for PPO
     model.save_pretrained("qwen3_reward_model")
     tokenizer.save_pretrained("qwen3_reward_model")
 
 if __name__ == "__main__":
-    init_wandb(config={"epochs": 3, "learning_rate": 1e-5})
+    init_wandb(config={"epochs": EPOCHS, "learning_rate": LEARNING_RATE})
     train_reward_model()
     wandb.finish()
-
