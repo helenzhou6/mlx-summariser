@@ -132,7 +132,7 @@ def train(model, train_dataloader, eval_dataloader, tokenizer):
 
         lora_output_path = f"qwenTLDRmodel_LoRA_epoch_{epoch}"
         model.save_pretrained(lora_output_path)
-        save_lora_weights(lora_output_path, f"lora_weights_{epoch}")
+        save_lora_weights(lora_output_path, f"base_lora_weights_{epoch}")
 
         eval(model, eval_dataloader, tokenizer, epoch)
 
