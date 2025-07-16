@@ -116,9 +116,10 @@ def train(model, train_dataloader, optimiser, tokenizer):
 
         print(f"Epoch {epoch + 1} | Average Loss: {avg_loss:.4f}")
         wandb.log({"epoch": epoch + 1, "train_loss": avg_loss})
-
-        torch.save(model.state_dict(), "data/qwenTLDRmodel.pt")
-        save_artifact("qwenTLDRmodel", "Trained summarising qwen model on Reddit TLDR dataset")
+        checkpoint_path = f"qwenTLDRmodel_epoch_{epoch}.pt"
+        torch.save(model.state_dict(), f"data/{checkpoint_path}.pt")
+        save_artifact(checkpoint_path, f"Trained summarising qwen model on Reddit TLDR dataset for epoch {epoch}")
+        os.remove(checkpoint_path)
 
 def main():
     device = get_device()
