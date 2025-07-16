@@ -62,7 +62,7 @@ def generate_summary(prompt, qwen_model, fine_tuned_model, tokenizer, device):
         qwen_ids = qwen_model.generate(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            max_length=150,
+            max_new_tokens=150,
         )
         
     # Generate summary using the fine-tuned model
@@ -70,12 +70,17 @@ def generate_summary(prompt, qwen_model, fine_tuned_model, tokenizer, device):
         fine_tuned_ids = fine_tuned_model.generate(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            max_length=150,
+            max_new_tokens=150,
         )
 
-    # Decode the generated summary
-    fine_tuned_summary = tokenizer.decode(fine_tuned_ids[0], skip_special_tokens=True)
-    qwen_summary = tokenizer.decode(qwen_ids[0], skip_special_tokens=True)
+    # Get only the newly generated tokens (after the input)
+    input_length = input_ids.shape[1]
+    fine_tuned_new_tokens = fine_tuned_ids[0][input_length:]
+    qwen_new_tokens = qwen_ids[0][input_length:]
+
+    # Decode only the new tokens
+    fine_tuned_summary = tokenizer.decode(fine_tuned_new_tokens, skip_special_tokens=True)
+    qwen_summary = tokenizer.decode(qwen_new_tokens, skip_special_tokens=True)
     return fine_tuned_summary, qwen_summary
 
     
