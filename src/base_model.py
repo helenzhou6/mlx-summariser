@@ -74,14 +74,38 @@ def print_sample(model, input_ids, attention_mask, labels, tokenizer):
             
             generated_text = tokenizer.decode(generated_ids[i], skip_special_tokens=True)
 
-            print("\n--- Example Output ---")
             print(f"[Input Text]: {input_text}")
             print(f"[Ground Truth]: {label_text}")
             print(f"[Generated]: {generated_text}")
             print("----------------------\n")
     
+def eval(model, eval_dataloader, tokenizer, epoch=None):
+    model.eval()
+    total_loss = 0.0
+    num_batches = 0
 
-def train(model, train_dataloader, optimiser, tokenizer):
+    with torch.no_grad():
+        for batch_idx, batch in enumerate(tqdm(eval_dataloader, desc="Evaluating")):
+            input_ids = batch["input_ids"].to(model.device)
+            attention_mask = batch["attention_mask"].to(model.device)
+            labels = batch["labels"].to(model.device)
+
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+            loss = outputs.loss
+            total_loss += loss.item()
+            num_batches += 1
+
+            if batch_idx == 0:
+                print("----\nEval Samples-----")
+                print_sample(model, input_ids, attention_mask, labels, tokenizer)
+
+    avg_eval_loss = total_loss / num_batches
+    print(f"Evaluation Loss: {avg_eval_loss:.4f}")
+    wandb.log({"eval_loss": avg_eval_loss, "epoch": epoch if epoch is not None else 0})
+    model.train()
+
+def train(model, train_dataloader, eval_dataloader, tokenizer):
+    optimiser = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE)
     model.train()
     for epoch in range(EPOCHS):
         print(f"---- EPOCH: {epoch + 1} ----")
@@ -103,9 +127,9 @@ def train(model, train_dataloader, optimiser, tokenizer):
             
             if batch_idx == 0:
                 model.eval()
+                print("\n----Train Samples-----")
                 print_sample(model, input_ids, attention_mask, labels, tokenizer)
-                
-            model.train()
+                model.train()
 
         avg_loss = running_loss / len(train_dataloader)
         print(f"Epoch {epoch + 1} | Average Loss: {avg_loss:.4f}")
@@ -114,30 +138,39 @@ def train(model, train_dataloader, optimiser, tokenizer):
         if epoch % 2:
             checkpoint_path = f"qwenTLDRmodel_epoch_{epoch}.pt"
             # TODO: Remove the below when not testing
-            torch.save(model.state_dict(), f"data/{checkpoint_path}.pt")
-            save_artifact(checkpoint_path, f"Trained summarising qwen model on Reddit TLDR dataset for epoch {epoch}")
+            # torch.save(model.state_dict(), f"data/{checkpoint_path}.pt")
+            # save_artifact(checkpoint_path, f"Trained summarising qwen model on Reddit TLDR dataset for epoch {epoch}")
             os.remove(f"data/{checkpoint_path}.pt")
+
+        eval(model, eval_dataloader, tokenizer, epoch)
+
+
+def get_dataloader(train_or_eval, tokenizer):
+    if train_or_eval == "train":
+        data_path = "data/train.jsonl"
+    elif train_or_eval == "eval":
+        data_path = "data/valid.jsonl"
+    
+    tldr_data = []
+    with open(data_path, "r", encoding="utf-8") as file:
+        for line in file:
+            tldr_data.append(json.loads(line))
+
+    # TODO: REMOVE THIS!!!
+    tldr_data = tldr_data[:10]
+    dataset = TLDRDataset(tldr_data, tokenizer)
+    return DataLoader(
+        dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        pin_memory=True
+    )
 
 def main():
     device = get_device()
 
     qwen_tokenizer = AutoTokenizer.from_pretrained(QWEN_NAME, trust_remote_code=True, padding_side='left')
     qwen_tokenizer.pad_token = qwen_tokenizer.eos_token
-
-    tldr_train_data = []
-    with open("data/train.jsonl", "r", encoding="utf-8") as file:
-        for line in file:
-            tldr_train_data.append(json.loads(line))
-
-    tldr_train_data = tldr_train_data[:10]
-
-    train_dataset = TLDRDataset(tldr_train_data, qwen_tokenizer)
-    train_dataloader = DataLoader(
-        train_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        pin_memory=True
-    )
 
     qwen_model = AutoModelForCausalLM.from_pretrained(QWEN_NAME)
     qwen_model.to(device)
@@ -153,9 +186,10 @@ def main():
     qwen_model = get_peft_model(qwen_model, lora_config)
     qwen_model.print_trainable_parameters()
    
-    optimiser = torch.optim.AdamW(qwen_model.parameters(), lr=LEARNING_RATE)
+    train_dataloader = get_dataloader("train", qwen_tokenizer)
+    eval_dataloader = get_dataloader("eval", qwen_tokenizer)
+    train(qwen_model, train_dataloader, eval_dataloader, qwen_tokenizer)
 
-    train(qwen_model, train_dataloader, optimiser, qwen_tokenizer)
 
 if __name__ == "__main__":
     init_wandb(config={
