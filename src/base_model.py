@@ -40,6 +40,7 @@ class TLDRDataset(Dataset):
         
         # Tokenize full text once
         full_text = prompt + label
+        # TODO: Expected label sometimes being concat from the max_length here - how to fix?
         enc = self.tokenizer(full_text, truncation=True, max_length=self.max_length, padding="max_length")
         
         # Create masked labels
