@@ -12,7 +12,6 @@ Steps:
 5. Save the trained reward model (this will be frozen during the PPO fine-tuning of the Qwen policy model)
 '''
 import json
-import os
 import torch
 import torch.nn as nn
 import wandb
@@ -21,11 +20,11 @@ from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig, get_peft_model
-from utils import get_device, init_wandb, save_artifact
+from utils import get_device, init_wandb, save_lora_weights, save_artifact
 
 # === Config ===
 QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
-DATA_PATH = "../data/comparisons_train.jsonl"
+DATA_PATH = "data/comparisons_train.jsonl"
 EPOCHS = 2
 BATCH_SIZE = 2
 LEARNING_RATE = 1e-5
@@ -37,7 +36,7 @@ class RewardComparisonDataset(Dataset):
     def __init__(self, tokenizer, max_length=512):
         with open(DATA_PATH, "r", encoding="utf-8") as f:
             self.data = [json.loads(line) for line in f]
-#        self.data = self.data[:2]
+        # self.data = self.data[:2]
         self.tokenizer = tokenizer
         self.max_length = max_length
 
@@ -149,12 +148,14 @@ def train_reward_model():
         print(f"Epoch {epoch+1} | Average Loss: {avg_loss:.4f}")
         wandb.log({"epoch": epoch + 1, "reward_train_loss": avg_loss})
 
-        os.makedirs("data", exist_ok=True)
-        torch.save(model.state_dict(), "data/qwenRewardModel.pt")
-        save_artifact("qwenRewardModel", "Reward model trained on human preferences")
+        lora_output_path = f"rewardModel_LoRA_epoch_{epoch}"
+        model.base_model.save_pretrained(lora_output_path)
+        save_lora_weights(lora_output_path, f"lora_weights_{epoch}")
 
-    model.base_model.save_pretrained("qwen3_reward_model")
-    tokenizer.save_pretrained("qwen3_reward_model")
+        value_head_path = f"rewardModel_valueHead_{epoch}"
+        torch.save(model.value_head.state_dict(), f"data/{value_head_path}.pt")
+        save_artifact(value_head_path, "Reward model value head only")
+
 
 if __name__ == "__main__":
     init_wandb(config={"epochs": EPOCHS, "learning_rate": LEARNING_RATE})
