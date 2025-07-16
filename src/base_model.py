@@ -12,7 +12,7 @@ from utils import get_device, init_wandb, save_artifact
 
 QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
 # QWEN_NAME = "Qwen/Qwen1.5-0.5B"
-EPOCHS = 2
+EPOCHS = 12
 LEARNING_RATE = 1e-5
 BATCH_SIZE = 2
 NUM_WORKERS = 8
@@ -31,32 +31,27 @@ class TLDRDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.dataset[idx]
-        prompt = sample["prompt"]
-        label = sample["ideal_summary"]
+        summary_tokens = self.tokenizer("\nSummary: " + sample["ideal_summary"], add_special_tokens=False)["input_ids"]
+        summary_length = len(summary_tokens)
+
+        max_prompt_length = self.max_length - summary_length
+        prompt_tokens = self.tokenizer("Summarize: " + sample["prompt"], add_special_tokens=False)["input_ids"][:max_prompt_length]
+
+        input_ids = prompt_tokens + summary_tokens # full text
         
-        # Tokenize prompt once to get its length
-        prompt_tokens = self.tokenizer(prompt, add_special_tokens=False)["input_ids"]
-        prompt_length = len(prompt_tokens)
-        
-        # Tokenize full text once
-        full_text = prompt + label
-        # TODO: Expected label sometimes being concat from the max_length here - how to fix?
-        enc = self.tokenizer(full_text, truncation=True, max_length=self.max_length, padding="max_length")
-        
-        # Create masked labels
-        labels = torch.full((self.max_length,), -100, dtype=torch.long)
-        input_ids = torch.tensor(enc["input_ids"])
-        
-        # Only predict label tokens (after prompt)
-        actual_length = (input_ids != self.tokenizer.pad_token_id).sum().item()
-        label_start = min(prompt_length, actual_length)
-        
-        labels[label_start:actual_length] = input_ids[label_start:actual_length]
-        
+        attention_mask = [1] * len(input_ids)
+        pad_len = self.max_length - len(input_ids)
+        input_ids += [self.tokenizer.pad_token_id] * pad_len
+        attention_mask += [0] * pad_len
+
+        labels = [-100] * len(prompt_tokens) + summary_tokens
+        labels = labels[:self.max_length]
+        labels += [-100] * (self.max_length - len(labels))
+
         return {
-            "input_ids": input_ids,
-            "attention_mask": torch.tensor(enc["attention_mask"]),
-            "labels": labels,
+            "input_ids": torch.tensor(input_ids, dtype=torch.long),
+            "attention_mask": torch.tensor(attention_mask, dtype=torch.long),
+            "labels": torch.tensor(labels, dtype=torch.long)
         }
     
 
@@ -75,7 +70,7 @@ def print_sample(model, input_ids, attention_mask, labels, tokenizer):
             
             # Filter out -100 tokens from labels before decoding
             valid_labels = labels[i][labels[i] != -100]
-            label_text = tokenizer.decode(valid_labels, skip_special_tokens=True) if len(valid_labels) > 0 else ""
+            label_text = tokenizer.decode(valid_labels, skip_special_tokens=True)
             
             generated_text = tokenizer.decode(generated_ids[i], skip_special_tokens=True)
 
@@ -113,13 +108,15 @@ def train(model, train_dataloader, optimiser, tokenizer):
             model.train()
 
         avg_loss = running_loss / len(train_dataloader)
-
         print(f"Epoch {epoch + 1} | Average Loss: {avg_loss:.4f}")
         wandb.log({"epoch": epoch + 1, "train_loss": avg_loss})
-        checkpoint_path = f"qwenTLDRmodel_epoch_{epoch}.pt"
-        torch.save(model.state_dict(), f"data/{checkpoint_path}.pt")
-        save_artifact(checkpoint_path, f"Trained summarising qwen model on Reddit TLDR dataset for epoch {epoch}")
-        os.remove(checkpoint_path)
+
+        if epoch % 2:
+            checkpoint_path = f"qwenTLDRmodel_epoch_{epoch}.pt"
+            # TODO: Remove the below when not testing
+            torch.save(model.state_dict(), f"data/{checkpoint_path}.pt")
+            save_artifact(checkpoint_path, f"Trained summarising qwen model on Reddit TLDR dataset for epoch {epoch}")
+            os.remove(f"data/{checkpoint_path}.pt")
 
 def main():
     device = get_device()
@@ -131,6 +128,8 @@ def main():
     with open("data/train.jsonl", "r", encoding="utf-8") as file:
         for line in file:
             tldr_train_data.append(json.loads(line))
+
+    tldr_train_data = tldr_train_data[:10]
 
     train_dataset = TLDRDataset(tldr_train_data, qwen_tokenizer)
     train_dataloader = DataLoader(
