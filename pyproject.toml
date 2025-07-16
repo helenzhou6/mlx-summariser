@@ -5,11 +5,15 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "absl-py>=2.3.1",
     "datasets>=4.0.0",
     "dotenv>=0.9.9",
+    "evaluate>=0.4.5",
     "ipykernel>=6.29.5",
+    "nltk>=3.9.1",
     "numpy==1.26",
     "peft>=0.16.0",
+    "rouge-score>=0.1.2",
     "torch==2.2.2",
     "tqdm>=4.67.1",
     "transformers>=4.53.2",
