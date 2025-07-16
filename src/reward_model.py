@@ -150,7 +150,7 @@ def train_reward_model():
 
         lora_output_path = f"rewardModel_LoRA_epoch_{epoch}"
         model.base_model.save_pretrained(lora_output_path)
-        save_lora_weights(lora_output_path, f"lora_weights_{epoch}")
+        save_lora_weights(lora_output_path, f"rewards_lora_weights_{epoch}")
 
         value_head_path = f"rewardModel_valueHead_{epoch}"
         torch.save(model.value_head.state_dict(), f"data/{value_head_path}.pt")
