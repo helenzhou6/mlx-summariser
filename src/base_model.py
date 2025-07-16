@@ -5,15 +5,14 @@ from torch.nn.utils import clip_grad_norm_
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import wandb
-import os
 from peft import LoraConfig, get_peft_model
 import json
-from utils import get_device, init_wandb, save_artifact
+from utils import get_device, init_wandb, save_lora_weights
 
-QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
-# QWEN_NAME = "Qwen/Qwen1.5-0.5B"
-EPOCHS = 12
-LEARNING_RATE = 1e-5
+# QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
+QWEN_NAME = "Qwen/Qwen1.5-0.5B"
+EPOCHS = 2
+LEARNING_RATE = 1e-4
 BATCH_SIZE = 2
 NUM_WORKERS = 8
 MAX_LENGTH = 550
@@ -57,18 +56,14 @@ class TLDRDataset(Dataset):
 
 def print_sample(model, input_ids, attention_mask, labels, tokenizer):
     with torch.no_grad():
-        # Generate output from the model
         generated_ids = model.generate(
             input_ids=input_ids,
             attention_mask=attention_mask,
             max_new_tokens=MAX_LENGTH
         )
 
-        # Decode original prompt + label
         for i in range(min(1, input_ids.size(0))):  # only show first sample
             input_text = tokenizer.decode(input_ids[i], skip_special_tokens=True)
-            
-            # Filter out -100 tokens from labels before decoding
             valid_labels = labels[i][labels[i] != -100]
             label_text = tokenizer.decode(valid_labels, skip_special_tokens=True)
             
@@ -76,7 +71,7 @@ def print_sample(model, input_ids, attention_mask, labels, tokenizer):
 
             print(f"[Input Text]: {input_text}")
             print(f"[Ground Truth]: {label_text}")
-            print(f"[Generated]: {generated_text}")
+            print(f"[Generated]: {generated_text.split('Summary: ')[1]}")
             print("----------------------\n")
     
 def eval(model, eval_dataloader, tokenizer, epoch=None):
@@ -135,15 +130,11 @@ def train(model, train_dataloader, eval_dataloader, tokenizer):
         print(f"Epoch {epoch + 1} | Average Loss: {avg_loss:.4f}")
         wandb.log({"epoch": epoch + 1, "train_loss": avg_loss})
 
-        if epoch % 2:
-            checkpoint_path = f"qwenTLDRmodel_epoch_{epoch}.pt"
-            # TODO: Remove the below when not testing
-            # torch.save(model.state_dict(), f"data/{checkpoint_path}.pt")
-            # save_artifact(checkpoint_path, f"Trained summarising qwen model on Reddit TLDR dataset for epoch {epoch}")
-            os.remove(f"data/{checkpoint_path}.pt")
+        lora_output_path = f"qwenTLDRmodel_LoRA_epoch_{epoch}"
+        model.save_pretrained(lora_output_path)
+        save_lora_weights(lora_output_path, f"lora_weights_{epoch}")
 
         eval(model, eval_dataloader, tokenizer, epoch)
-
 
 def get_dataloader(train_or_eval, tokenizer):
     if train_or_eval == "train":

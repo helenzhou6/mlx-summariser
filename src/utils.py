@@ -45,3 +45,14 @@ def load_artifact_path(artifact_name, version="latest", file_extension='pt'):
     artifact = wandb.use_artifact(f"{artifact_name}:{version}")
     directory = artifact.download()
     return f"{directory}/{artifact_name}.{file_extension}"
+
+def save_lora_weights(lora_dir_name, lora_weights_name):
+    artifact = wandb.Artifact(lora_weights_name, type="model")
+    artifact.add_dir(lora_dir_name)
+    wandb.log_artifact(artifact)
+
+def load_lora_weights(lora_dir_name, version):
+    artifact = wandb.use_artifact(f"{lora_dir_name}:{version}", type="model")
+    directory = artifact.download()
+    return f"{directory}/{lora_dir_name}"
+
