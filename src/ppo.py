@@ -1,29 +1,21 @@
 from torch.optim import Adam
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
+from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 import random
+import json
+import wandb
 from peft import PeftModel, PeftConfig
 from utils import init_wandb, load_lora_weights, load_artifact_path, get_device
+import torch.nn.functional as F
 
-init_wandb()
-# SET PROJECT IN .env TO ppo-mini
-base_weights_path = load_lora_weights("base_lora_weights_0", "v2")
-rewards_weights_path = load_lora_weights("rewards_lora_weights_0", "v0")
-reward_value_head_path = load_artifact_path("rewardModel_valueHead_0", "v0")
-
-device = get_device()
-
+CLIP_EPISILON = 0.2
+EPOCHS = 1
+BATCH_SIZE = 4
+MAX_LENGTH = 550
+LEARNING_RATE = 5e-6
 QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
-# Load base model (policy)
-
-base_model = AutoModelForCausalLM.from_pretrained(QWEN_NAME, trust_remote_code=True)
-tokenizer = AutoTokenizer.from_pretrained(QWEN_NAME, trust_remote_code=True)
-base_model = PeftModel.from_pretrained(base_model, base_weights_path)
-
-policy = base_model.to(device)
-policy.train()
-
 
 class RewardModel(torch.nn.Module):
     def __init__(self, model, value_head_path):
@@ -34,76 +26,170 @@ class RewardModel(torch.nn.Module):
 
     def forward(self, input_ids, attention_mask):
         with torch.no_grad():
-            outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
-            last_hidden = outputs.last_hidden_state  # shape: [batch, seq_len, hidden]
-        value = self.value_head(last_hidden[:, -1, :])  # use final token
+            outputs = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                output_hidden_states=True,
+                return_dict=True
+            )
+            hidden_states = outputs.hidden_states 
+            last_hidden = hidden_states[-1]        # final layer's output
+        value = self.value_head(last_hidden[:, -1, :])  # use last token
         return value.squeeze(-1)
 
-# Load reward model with LoRA
-reward_base = AutoModelForCausalLM.from_pretrained(QWEN_NAME, trust_remote_code=True)
-reward_model = PeftModel.from_pretrained(reward_base, rewards_weights_path)
-reward_model = RewardModel(reward_model, reward_value_head_path).to(device)
-reward_model.eval()
 
-# Replace reward_fn
-def reward_fn(prompt, summary):
-    inputs = tokenizer(prompt + summary, return_tensors="pt", truncation=True, padding=True).to(device)
-    return reward_model(**inputs).item()
 
-# Clone policy to create old_policy (for PPO ratio)
-old_policy = AutoModelForCausalLM.from_pretrained(QWEN_NAME, trust_remote_code=True)
-old_policy = PeftModel.from_pretrained(old_policy, base_weights_path)
-old_policy = old_policy.to(device)
-old_policy.eval()
+class TLDRDataset(Dataset):
+    def __init__(self, dataset, tokenizer):
+        self.dataset = dataset  # Store raw dataset
+        self.tokenizer = tokenizer
+        self.max_length = MAX_LENGTH
 
-optimizer = Adam(policy.parameters(), lr=5e-6)
+    def __len__(self):
+        return len(self.dataset)
 
-clip_epsilon = 0.2
-epochs = 3
-batch_size = 4
+    def __getitem__(self, idx):
+        sample = self.dataset[idx]
+        prompt_tokens = self.tokenizer("Summarize: " + sample["prompt"], add_special_tokens=False)["input_ids"]
+        input_ids = prompt_tokens
+        attention_mask = [1] * len(input_ids)
+        pad_len = self.max_length - len(input_ids)
+        input_ids += [self.tokenizer.pad_token_id] * pad_len
+        attention_mask += [0] * pad_len
 
-for epoch in range(epochs):
-    print(f"\nEpoch {epoch + 1}/{epochs}")
-    random.shuffle(dataset)  # Sample prompts
+        return {
+            "input_ids": torch.tensor(input_ids, dtype=torch.long),
+            "attention_mask": torch.tensor(attention_mask, dtype=torch.long),
+        }
     
-    for i in tqdm(range(0, len(dataset), batch_size)):
-        batch = dataset[i:i + batch_size]
-        prompts = [item["prompt"] for item in batch]
 
-        # Generate summaries from policy model
-        with torch.no_grad():
-            inputs = tokenizer(prompts, return_tensors="pt", padding=True, truncation=True).to(device)
-            outputs = policy.generate(**inputs, max_new_tokens=64)
-            summaries = tokenizer.batch_decode(outputs[:, inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+def get_dataloader(train_or_eval, tokenizer):
+    if train_or_eval == "train":
+        data_path = "data/train.jsonl"
+    elif train_or_eval == "eval":
+        data_path = "data/valid.jsonl"
+    
+    tldr_data = []
+    with open(data_path, "r", encoding="utf-8") as file:
+        for line in file:
+            tldr_data.append(json.loads(line))
 
-        # Compute rewards
-        rewards = [reward_fn(p, s) for p, s in zip(prompts, summaries)]
-        rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
+    # TODO: REMOVE THIS!!!
+    tldr_data = tldr_data[:10]
+    dataset = TLDRDataset(tldr_data, tokenizer)
+    return DataLoader(
+        dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        pin_memory=True
+    )
 
-        # Compute logprobs from current and old policies
-        def get_logprobs(model, prompts, responses):
-            full_texts = [p + r for p, r in zip(prompts, responses)]
-            inputs = tokenizer(full_texts, return_tensors="pt", padding=True, truncation=True).to(device)
+def main():
+    # SET PROJECT IN .env TO ppo-mini
+    base_weights_path = load_lora_weights("base_lora_weights_0", "v2")
+    rewards_weights_path = load_lora_weights("rewards_lora_weights_0", "v0")
+    reward_value_head_path = load_artifact_path("rewardModel_valueHead_0", "v0")
+
+    device = get_device()
+
+    base_model = AutoModelForCausalLM.from_pretrained(QWEN_NAME, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(QWEN_NAME, trust_remote_code=True)
+    base_model = PeftModel.from_pretrained(base_model, base_weights_path)
+
+    policy = base_model.to(device)
+    policy.train()
+    # Manually unfreeze LoRA adapter parameters
+    for name, param in policy.named_parameters():
+        if "lora_" in name:
+            param.requires_grad = True
+    # Use only trainable parameters for optimizer
+    optimizer = Adam([p for p in policy.parameters() if p.requires_grad], lr=LEARNING_RATE)
+
+    reward_base = AutoModelForCausalLM.from_pretrained(QWEN_NAME, trust_remote_code=True)
+    reward_model = PeftModel.from_pretrained(reward_base, rewards_weights_path)
+    reward_model = RewardModel(reward_model, reward_value_head_path).to(device)
+    reward_model.eval()
+
+    # Clone policy to create old_policy (for PPO ratio)
+    old_policy = AutoModelForCausalLM.from_pretrained(QWEN_NAME, trust_remote_code=True)
+    old_policy = PeftModel.from_pretrained(old_policy, base_weights_path)
+    old_policy = old_policy.to(device)
+    old_policy.eval()
+
+    def reward_fn(prompt_tensor, summary):
+        # Decode prompt tensor to string
+        prompt = tokenizer.decode(prompt_tensor, skip_special_tokens=True)
+        full_input = prompt + summary
+        inputs = tokenizer(full_input, return_tensors="pt", truncation=True, padding=True).to(device)
+        return reward_model(**inputs).item()
+
+    train_dataloader = get_dataloader("train", tokenizer)
+
+    for epoch in range(EPOCHS):
+        print(f"\n--- Epoch {epoch + 1}/{EPOCHS} ---")
+        running_loss = 0
+        for batch_idx, batch in enumerate(tqdm(train_dataloader, desc=f"Epoch {epoch+1}")):
+            prompts = batch["input_ids"].to(base_model.device)
+            attention_mask = batch["attention_mask"].to(base_model.device)
+
+            # Generate summaries from policy model
             with torch.no_grad():
-                output = model(**inputs, labels=inputs["input_ids"])
-            logprobs = -output.loss  # log-likelihood
-            return logprobs
+                prompt_texts = tokenizer.batch_decode(prompts, skip_special_tokens=True)
+                inputs = tokenizer(prompt_texts, return_tensors="pt", padding=True, truncation=True).to(device)
+                outputs = policy.generate(**inputs, max_new_tokens=64)
+                summaries = tokenizer.batch_decode(outputs[:, inputs['input_ids'].shape[1]:], skip_special_tokens=True)
 
-        logprobs = get_logprobs(policy, prompts, summaries)
-        old_logprobs = get_logprobs(old_policy, prompts, summaries)
+            # Compute rewards
+            rewards = [reward_fn(p, s) for p, s in zip(prompts, summaries)]
+            rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
 
-        # PPO ratio and clipped objective
-        advantages = rewards - rewards.mean()
-        ratio = torch.exp(logprobs - old_logprobs)
-        clipped_ratio = torch.clamp(ratio, 1 - clip_epsilon, 1 + clip_epsilon)
-        loss = -torch.min(ratio * advantages, clipped_ratio * advantages).mean()
+            # Compute logprobs from current and old policies
+            def get_logprobs(model, prompts, responses):
+                prompt_texts = tokenizer.batch_decode(prompts, skip_special_tokens=True)
+                full_texts = [p + r for p, r in zip(prompt_texts, responses)]
+                inputs = tokenizer(full_texts, return_tensors="pt", padding=True, truncation=True).to(device)
+                labels = inputs["input_ids"]
+                outputs = model(**inputs)
+                logits = outputs.logits
 
-        # Backprop
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+                # Shift so that tokens < n predict n
+                shift_logits = logits[..., :-1, :].contiguous()
+                shift_labels = labels[..., 1:].contiguous()
 
-        # Optional: update old policy slowly (soft update)
-        old_policy.load_state_dict(policy.state_dict())
+                # Flatten the tokens
+                loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
+                loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+                loss = loss.view(shift_labels.size())
+                # Sum over sequence, mean over batch
+                logprobs = -loss.sum(dim=1)  # per-sample log-likelihood
+                return logprobs
 
-    print(f"Loss: {loss.item():.4f}")
+            logprobs = get_logprobs(policy, prompts, summaries)
+            old_logprobs = get_logprobs(old_policy, prompts, summaries)
+
+            # PPO ratio and clipped objective
+            advantages = rewards - rewards.mean()
+            ratio = torch.exp(logprobs - old_logprobs)
+            clipped_ratio = torch.clamp(ratio, 1 - CLIP_EPISILON, 1 + CLIP_EPISILON)
+            loss = -torch.min(ratio * advantages, clipped_ratio * advantages).mean()
+            running_loss += loss.item()
+
+            # Backprop
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            # Optional: update old policy slowly (soft update)
+            old_policy.load_state_dict(policy.state_dict())
+
+        avg_loss = running_loss / len(train_dataloader)
+        print(f"Epoch {epoch + 1} | Average Loss: {avg_loss:.4f}")
+        wandb.log({"epoch": epoch + 1, "train_loss": avg_loss})
+
+if __name__ == "__main__":
+    init_wandb(config={
+        "epochs": EPOCHS,
+        "learning_rate": LEARNING_RATE
+    })
+    main()
+    wandb.finish()
