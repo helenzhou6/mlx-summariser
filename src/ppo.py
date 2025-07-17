@@ -9,6 +9,8 @@ import wandb
 from peft import PeftModel, PeftConfig
 from utils import init_wandb, load_lora_weights, load_artifact_path, get_device, save_lora_weights
 import torch.nn.functional as F
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
 
 CLIP_EPISILON = 0.2
 EPOCHS = 10
@@ -16,6 +18,7 @@ BATCH_SIZE = 2
 MAX_LENGTH = 550
 LEARNING_RATE = 5e-6
 QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
+USE_OTS_REWARD_MODEL = True
 
 class RewardModel(torch.nn.Module):
     def __init__(self, model, value_head_path):
@@ -128,9 +131,13 @@ def main():
     # Use only trainable parameters for optimizer
     optimizer = Adam([p for p in policy.parameters() if p.requires_grad], lr=LEARNING_RATE)
 
-    reward_base = AutoModelForCausalLM.from_pretrained(QWEN_NAME, trust_remote_code=True)
-    reward_model = PeftModel.from_pretrained(reward_base, rewards_weights_path)
-    reward_model = RewardModel(reward_model, reward_value_head_path).to(device)
+    if USE_OTS_REWARD_MODEL:
+        reward_model = AutoModelForSequenceClassification.from_pretrained("OpenAssistant/reward-model-deberta-v3-large-v2", use_safetensors=True)
+        reward_tokenizer = AutoTokenizer.from_pretrained("OpenAssistant/reward-model-deberta-v3-large-v2")
+    else:
+        reward_base = AutoModelForCausalLM.from_pretrained(QWEN_NAME, trust_remote_code=True)
+        reward_model = PeftModel.from_pretrained(reward_base, rewards_weights_path)
+        reward_model = RewardModel(reward_model, reward_value_head_path).to(device)
     reward_model.eval()
 
     # Clone policy to create old_policy (for PPO ratio)
@@ -142,9 +149,15 @@ def main():
     def reward_fn(prompt_tensor, summary):
         # Decode prompt tensor to string
         prompt = tokenizer.decode(prompt_tensor, skip_special_tokens=True)
-        full_input = prompt + summary
-        inputs = tokenizer(full_input, return_tensors="pt", truncation=True, padding=True).to(device)
-        return reward_model(**inputs).item()
+
+        if USE_OTS_REWARD_MODEL:
+            inputs = reward_tokenizer(prompt, summary, return_tensors="pt").to(device)
+            reward = reward_model(**inputs).logits.item()
+        else:
+            full_input = prompt + summary
+            inputs = tokenizer(full_input, return_tensors="pt", truncation=True, padding=True).to(device)
+            reward = reward_model(**inputs).item()
+        return reward
 
     train_dataloader = get_dataloader("train", tokenizer)
 
