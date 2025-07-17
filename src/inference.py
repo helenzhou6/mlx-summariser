@@ -15,6 +15,7 @@ def load_models():
 
     # Load the base Qwen model
     qwen_name = "Qwen/Qwen3-0.6B-Base"
+    
     qwen_model = AutoModelForCausalLM.from_pretrained(qwen_name)
     qwen_model.to(device)
     qwen_model.eval()
@@ -86,9 +87,9 @@ def generate_summary(prompt, qwen_model, fine_tuned_model, tokenizer, device):
     
 def main():
 
-    st.title("Qwen TLDR Summarizer")
-    
     qwen_model, fine_tuned_model, tokenizer, device = load_models()
+    
+    st.title("Qwen TLDR Summarizer")
 
     prompt = st.text_area("Enter text to summarize:", height=300)
     

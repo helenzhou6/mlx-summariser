@@ -9,14 +9,16 @@ from peft import LoraConfig, get_peft_model
 import json
 from utils import get_device, init_wandb, save_lora_weights
 
-# QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
-QWEN_NAME = "Qwen/Qwen1.5-0.5B"
+QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
 EPOCHS = 2
 LEARNING_RATE = 1e-4
 BATCH_SIZE = 2
 NUM_WORKERS = 8
 MAX_LENGTH = 550
 MAX_GRAD_NORM = 1.0
+
+# TODO: DON'T FORGET ME!!!
+IS_SMALL_DATA_RUN = True
 
 
 class TLDRDataset(Dataset):
@@ -30,7 +32,7 @@ class TLDRDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.dataset[idx]
-        summary_tokens = self.tokenizer("\nSummary: " + sample["ideal_summary"], add_special_tokens=False)["input_ids"]
+        summary_tokens = self.tokenizer("\nSummary: " + sample["ideal_summary"] + self.tokenizer.eos_token, add_special_tokens=False)["input_ids"]
         summary_length = len(summary_tokens)
 
         max_prompt_length = self.max_length - summary_length
@@ -130,7 +132,7 @@ def train(model, train_dataloader, eval_dataloader, tokenizer):
         print(f"Epoch {epoch + 1} | Average Loss: {avg_loss:.4f}")
         wandb.log({"epoch": epoch + 1, "train_loss": avg_loss})
 
-        lora_output_path = f"qwenTLDRmodel_LoRA_epoch_{epoch}"
+        lora_output_path = f"artifacts/qwenTLDRmodel_LoRA_epoch_{epoch}"
         model.save_pretrained(lora_output_path)
         save_lora_weights(lora_output_path, f"base_lora_weights_{epoch}")
 
@@ -148,7 +150,8 @@ def get_dataloader(train_or_eval, tokenizer):
             tldr_data.append(json.loads(line))
 
     # TODO: REMOVE THIS!!!
-    tldr_data = tldr_data[:10]
+    if IS_SMALL_DATA_RUN:
+        tldr_data = tldr_data[:10]
     dataset = TLDRDataset(tldr_data, tokenizer)
     return DataLoader(
         dataset,
