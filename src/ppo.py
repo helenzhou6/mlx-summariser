@@ -11,10 +11,11 @@ from utils import init_wandb, load_lora_weights, load_artifact_path, get_device,
 import torch.nn.functional as F
 
 CLIP_EPISILON = 0.2
-EPOCHS = 1
+EPOCHS = 10
 BATCH_SIZE = 2
 MAX_LENGTH = 550
 LEARNING_RATE = 5e-6
+# NOTE: ppo-mini uses Qwen3 and ppo uses Qwen1.5
 QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
 
 class RewardModel(torch.nn.Module):
@@ -36,8 +37,6 @@ class RewardModel(torch.nn.Module):
             last_hidden = hidden_states[-1]        # final layer's output
         value = self.value_head(last_hidden[:, -1, :])  # use last token
         return value.squeeze(-1)
-
-
 
 class TLDRDataset(Dataset):
     def __init__(self, dataset, tokenizer):
@@ -75,7 +74,7 @@ def get_dataloader(train_or_eval, tokenizer):
             tldr_data.append(json.loads(line))
 
     # TODO: REMOVE THIS!!!
-    tldr_data = tldr_data[:10]
+    # tldr_data = tldr_data[:10]
     dataset = TLDRDataset(tldr_data, tokenizer)
     return DataLoader(
         dataset,
@@ -106,9 +105,14 @@ def get_logprobs(model, prompts, responses, tokenizer):
 
 def main():
     # This is with .env wandb project as ppo-mini - for testing etc
-    base_weights_path = load_lora_weights("base_lora_weights_0", "v2")
-    rewards_weights_path = load_lora_weights("rewards_lora_weights_0", "v0")
-    reward_value_head_path = load_artifact_path("rewardModel_valueHead_0", "v0")
+    # base_weights_path = load_lora_weights("base_lora_weights_0", "v2")
+    # rewards_weights_path = load_lora_weights("rewards_lora_weights_0", "v0")
+    # reward_value_head_path = load_artifact_path("rewardModel_valueHead_0", "v0")
+
+    # Currently running with .env ppo and fully trained models
+    base_weights_path = load_lora_weights("base_lora_weights_11", "v1")
+    rewards_weights_path = load_lora_weights("rewards_lora_weights_4", "v0")
+    reward_value_head_path = load_artifact_path("rewardModel_valueHead_4", "v0")
 
     device = get_device()
 
