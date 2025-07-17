@@ -184,7 +184,7 @@ def main():
 
         avg_loss = running_loss / len(train_dataloader)
         print(f"Epoch {epoch + 1} | Average Loss: {avg_loss:.4f}")
-        wandb.log({"epoch": epoch + 1, "train_loss": avg_loss})
+        wandb.log({"epoch": epoch + 1, "train_ppo_loss": avg_loss})
 
 if __name__ == "__main__":
     init_wandb(config={
