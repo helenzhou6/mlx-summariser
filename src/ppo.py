@@ -118,6 +118,7 @@ def main():
 
     base_model = AutoModelForCausalLM.from_pretrained(QWEN_NAME, trust_remote_code=True)
     tokenizer = AutoTokenizer.from_pretrained(QWEN_NAME, trust_remote_code=True, padding_side='left')
+    tokenizer.pad_token = tokenizer.eos_token
     base_model = PeftModel.from_pretrained(base_model, base_weights_path)
 
     policy = base_model.to(device)
