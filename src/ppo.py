@@ -15,7 +15,6 @@ EPOCHS = 10
 BATCH_SIZE = 2
 MAX_LENGTH = 550
 LEARNING_RATE = 5e-6
-# NOTE: ppo-mini uses Qwen3 and ppo uses Qwen1.5
 QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
 
 class RewardModel(torch.nn.Module):
