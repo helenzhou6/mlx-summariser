@@ -54,5 +54,5 @@ def save_lora_weights(lora_dir_name, lora_weights_name):
 def load_lora_weights(lora_dir_name, version):
     artifact = wandb.use_artifact(f"{lora_dir_name}:{version}", type="model")
     directory = artifact.download()
-    return f"{directory}/{lora_dir_name}"
+    return directory
 
