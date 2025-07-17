@@ -11,12 +11,12 @@ from utils import init_wandb, load_lora_weights, load_artifact_path, get_device,
 import torch.nn.functional as F
 
 CLIP_EPISILON = 0.2
-EPOCHS = 10
+EPOCHS = 15
 BATCH_SIZE = 2
 MAX_LENGTH = 550
-LEARNING_RATE = 5e-6
+LEARNING_RATE = 1e-4
 QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
-USE_OTS_REWARD_MODEL = False                                   
+USE_OTS_REWARD_MODEL = True                                   
 
 class RewardModel(torch.nn.Module):
     def __init__(self, model, value_head_path):
@@ -85,6 +85,12 @@ def get_dataloader(train_or_eval, tokenizer):
 
 def get_logprobs(model, prompts, responses, tokenizer):
     prompt_texts = tokenizer.batch_decode(prompts, skip_special_tokens=True)
+    
+    # Tokenize prompts to get their lengths
+    prompt_inputs = tokenizer(prompt_texts, return_tensors="pt", padding=True, truncation=True).to(model.device)
+    prompt_lengths = (prompt_inputs["attention_mask"].sum(dim=1)).tolist()
+    
+    # Tokenize full sequences (prompt + response)
     full_texts = [p + r for p, r in zip(prompt_texts, responses)]
     inputs = tokenizer(full_texts, return_tensors="pt", padding=True, truncation=True).to(model.device)
     labels = inputs["input_ids"]
@@ -99,9 +105,16 @@ def get_logprobs(model, prompts, responses, tokenizer):
     loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
     loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
     loss = loss.view(shift_labels.size())
-    # Sum over sequence, mean over batch
-    logprobs = -loss.sum(dim=1)  # per-sample log-likelihood
-    return logprobs
+    
+    # Only compute logprobs for response tokens (not prompt tokens)
+    batch_logprobs = []
+    for i, prompt_len in enumerate(prompt_lengths):
+        # Get loss only for response tokens (after prompt)
+        response_loss = loss[i, prompt_len-1:]  # -1 because of shifting
+        logprob = -response_loss.sum()  # Sum over response tokens only
+        batch_logprobs.append(logprob)
+    
+    return torch.stack(batch_logprobs)
 
 def main():
     # This is with .env wandb project as ppo-mini - for testing etc
@@ -110,7 +123,7 @@ def main():
     # reward_value_head_path = load_artifact_path("rewardModel_valueHead_0", "v0")
 
     # Currently running with .env ppo and fully trained models
-    base_weights_path = load_lora_weights("base_lora_weights_11", "v1")
+    base_weights_path = load_lora_weights("base_lora_weights_6", "v2")
     rewards_weights_path = load_lora_weights("rewards_lora_weights_4", "v0")
     reward_value_head_path = load_artifact_path("rewardModel_valueHead_4", "v0", "pt")
 
@@ -119,6 +132,7 @@ def main():
     base_model = AutoModelForCausalLM.from_pretrained(QWEN_NAME, trust_remote_code=True)
     tokenizer = AutoTokenizer.from_pretrained(QWEN_NAME, trust_remote_code=True, padding_side='left')
     tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.pad_token_id = tokenizer.eos_token_id
     base_model = PeftModel.from_pretrained(base_model, base_weights_path)
 
     policy = base_model.to(device)
@@ -180,14 +194,24 @@ def main():
             rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
 
             # Compute logprobs from current and old policies
+            policy.eval()  # Put in eval mode for consistent logprob calculation
             logprobs = get_logprobs(policy, prompts, summaries, tokenizer)
             old_logprobs = get_logprobs(old_policy, prompts, summaries, tokenizer)
+            policy.train()  # Back to train mode for gradient updates
 
             # PPO ratio and clipped objective
             advantages = rewards - rewards.mean()
-            ratio = torch.exp(logprobs - old_logprobs)
+            logprob_diff = logprobs - old_logprobs
+            
+            # Clamp logprob differences to prevent extreme ratios
+            logprob_diff = torch.clamp(logprob_diff, min=-10, max=10)
+            ratio = torch.exp(logprob_diff)
+            
             clipped_ratio = torch.clamp(ratio, 1 - CLIP_EPISILON, 1 + CLIP_EPISILON)
-            loss = -torch.min(ratio * advantages, clipped_ratio * advantages).mean()
+            surr1 = ratio * advantages
+            surr2 = clipped_ratio * advantages
+            loss = -torch.min(surr1, surr2).mean()
+            
             running_loss += loss.item()
 
             # Backprop
