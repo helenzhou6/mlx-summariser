@@ -1,5 +1,5 @@
 from torch.optim import Adam
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoModelForSequenceClassification
 import torch
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
@@ -9,8 +9,6 @@ import wandb
 from peft import PeftModel, PeftConfig
 from utils import init_wandb, load_lora_weights, load_artifact_path, get_device, save_lora_weights
 import torch.nn.functional as F
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
-
 
 CLIP_EPISILON = 0.2
 EPOCHS = 10
@@ -18,7 +16,7 @@ BATCH_SIZE = 2
 MAX_LENGTH = 550
 LEARNING_RATE = 5e-6
 QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
-USE_OTS_REWARD_MODEL = True
+USE_OTS_REWARD_MODEL = False                                   
 
 class RewardModel(torch.nn.Module):
     def __init__(self, model, value_head_path):
@@ -114,12 +112,12 @@ def main():
     # Currently running with .env ppo and fully trained models
     base_weights_path = load_lora_weights("base_lora_weights_11", "v1")
     rewards_weights_path = load_lora_weights("rewards_lora_weights_4", "v0")
-    reward_value_head_path = load_artifact_path("rewardModel_valueHead_4", "v0")
+    reward_value_head_path = load_artifact_path("rewardModel_valueHead_4", "v0", "pt")
 
     device = get_device()
 
     base_model = AutoModelForCausalLM.from_pretrained(QWEN_NAME, trust_remote_code=True)
-    tokenizer = AutoTokenizer.from_pretrained(QWEN_NAME, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(QWEN_NAME, trust_remote_code=True, padding_side='left')
     base_model = PeftModel.from_pretrained(base_model, base_weights_path)
 
     policy = base_model.to(device)
@@ -137,7 +135,8 @@ def main():
     else:
         reward_base = AutoModelForCausalLM.from_pretrained(QWEN_NAME, trust_remote_code=True)
         reward_model = PeftModel.from_pretrained(reward_base, rewards_weights_path)
-        reward_model = RewardModel(reward_model, reward_value_head_path).to(device)
+        reward_model = RewardModel(reward_model, reward_value_head_path)
+    reward_model.to(device)
     reward_model.eval()
 
     # Clone policy to create old_policy (for PPO ratio)
@@ -193,10 +192,11 @@ def main():
             # Backprop
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(policy.parameters(), max_norm=1.0)
             optimizer.step()
 
-            # Optional: update old policy slowly (soft update)
-            old_policy.load_state_dict(policy.state_dict())
+        # Update old policy at the end of each epoch (not every batch)
+        old_policy.load_state_dict(policy.state_dict())
 
         avg_loss = running_loss / len(train_dataloader)
         print(f"Epoch {epoch + 1} | Average Loss: {avg_loss:.4f}")
