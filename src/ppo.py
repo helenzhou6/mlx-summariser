@@ -12,7 +12,7 @@ import torch.nn.functional as F
 
 CLIP_EPISILON = 0.2
 EPOCHS = 1
-BATCH_SIZE = 4
+BATCH_SIZE = 2
 MAX_LENGTH = 550
 LEARNING_RATE = 5e-6
 QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
@@ -84,8 +84,28 @@ def get_dataloader(train_or_eval, tokenizer):
         pin_memory=True
     )
 
+def get_logprobs(model, prompts, responses, tokenizer):
+    prompt_texts = tokenizer.batch_decode(prompts, skip_special_tokens=True)
+    full_texts = [p + r for p, r in zip(prompt_texts, responses)]
+    inputs = tokenizer(full_texts, return_tensors="pt", padding=True, truncation=True).to(model.device)
+    labels = inputs["input_ids"]
+    outputs = model(**inputs)
+    logits = outputs.logits
+
+    # Shift so that tokens < n predict n
+    shift_logits = logits[..., :-1, :].contiguous()
+    shift_labels = labels[..., 1:].contiguous()
+
+    # Flatten the tokens
+    loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
+    loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+    loss = loss.view(shift_labels.size())
+    # Sum over sequence, mean over batch
+    logprobs = -loss.sum(dim=1)  # per-sample log-likelihood
+    return logprobs
+
 def main():
-    # SET PROJECT IN .env TO ppo-mini
+    # This is with .env wandb project as ppo-mini - for testing etc
     base_weights_path = load_lora_weights("base_lora_weights_0", "v2")
     rewards_weights_path = load_lora_weights("rewards_lora_weights_0", "v0")
     reward_value_head_path = load_artifact_path("rewardModel_valueHead_0", "v0")
@@ -144,28 +164,8 @@ def main():
             rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
 
             # Compute logprobs from current and old policies
-            def get_logprobs(model, prompts, responses):
-                prompt_texts = tokenizer.batch_decode(prompts, skip_special_tokens=True)
-                full_texts = [p + r for p, r in zip(prompt_texts, responses)]
-                inputs = tokenizer(full_texts, return_tensors="pt", padding=True, truncation=True).to(device)
-                labels = inputs["input_ids"]
-                outputs = model(**inputs)
-                logits = outputs.logits
-
-                # Shift so that tokens < n predict n
-                shift_logits = logits[..., :-1, :].contiguous()
-                shift_labels = labels[..., 1:].contiguous()
-
-                # Flatten the tokens
-                loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
-                loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-                loss = loss.view(shift_labels.size())
-                # Sum over sequence, mean over batch
-                logprobs = -loss.sum(dim=1)  # per-sample log-likelihood
-                return logprobs
-
-            logprobs = get_logprobs(policy, prompts, summaries)
-            old_logprobs = get_logprobs(old_policy, prompts, summaries)
+            logprobs = get_logprobs(policy, prompts, summaries, tokenizer)
+            old_logprobs = get_logprobs(old_policy, prompts, summaries, tokenizer)
 
             # PPO ratio and clipped objective
             advantages = rewards - rewards.mean()
