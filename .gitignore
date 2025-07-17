@@ -3,6 +3,7 @@ qwenTLDRmodel_LoRA*/
 artifacts/
 *.pt
 rewardModel_LoRA_*/
+popoModel_LoRA_*/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

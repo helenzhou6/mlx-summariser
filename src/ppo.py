@@ -7,7 +7,7 @@ import random
 import json
 import wandb
 from peft import PeftModel, PeftConfig
-from utils import init_wandb, load_lora_weights, load_artifact_path, get_device
+from utils import init_wandb, load_lora_weights, load_artifact_path, get_device, save_lora_weights
 import torch.nn.functional as F
 
 CLIP_EPISILON = 0.2
@@ -185,6 +185,10 @@ def main():
         avg_loss = running_loss / len(train_dataloader)
         print(f"Epoch {epoch + 1} | Average Loss: {avg_loss:.4f}")
         wandb.log({"epoch": epoch + 1, "train_ppo_loss": avg_loss})
+
+        lora_output_path = f"popoModel_LoRA_epoch_{epoch}"
+        policy.save_pretrained(lora_output_path)
+        save_lora_weights(lora_output_path, f"popo_LoRA_epoch_{epoch}")
 
 if __name__ == "__main__":
     init_wandb(config={
