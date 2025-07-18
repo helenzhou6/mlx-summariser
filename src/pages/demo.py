@@ -51,7 +51,7 @@ def load_models():
         st.error(f"Error loading models: {e}")
         raise  # re-raise to stop execution if needed
 
-def generate_summary(qwen_model, fine_tuned_model, tokenizer, device):
+def generate_summary(qwen_model, fine_tuned_model, policy_model, tokenizer, device):
     # Tokenize the input prompt
     prompt = "Summarize: " + PROMPT_TEXT + "\n Summary:"
     inputs = tokenizer(prompt, return_tensors='pt', truncation=True, max_length=550, padding='max_length')
@@ -74,25 +74,7 @@ def generate_summary(qwen_model, fine_tuned_model, tokenizer, device):
             max_new_tokens=150,
         )
 
-    # Get only the newly generated tokens (after the input)
-    input_length = input_ids.shape[1]
-    qwen_new_tokens = qwen_ids[0][input_length:]
-    fine_tuned_new_tokens = fine_tuned_ids[0][input_length:]
-
-    # Decode only the new tokens
-    fine_tuned_summary = tokenizer.decode(fine_tuned_new_tokens, skip_special_tokens=True)
-    qwen_summary = tokenizer.decode(qwen_new_tokens, skip_special_tokens=True)
-    return qwen_summary, fine_tuned_summary
-
-
-def generate_policy_summary(policy_model, tokenizer, device):
-    # Tokenize the input prompt
-    prompt = "Summarize: " + PROMPT_TEXT + "\n Summary:"
-    inputs = tokenizer(prompt, return_tensors='pt', truncation=True, max_length=550, padding='max_length')
-    input_ids = inputs['input_ids'].to(device)
-    attention_mask = inputs['attention_mask'].to(device)
-
-    # Generate summary using the fine-tuned model
+    # Generate summary using policy
     with torch.no_grad():
         policy_ids = policy_model.generate(
             input_ids=input_ids,
@@ -102,11 +84,15 @@ def generate_policy_summary(policy_model, tokenizer, device):
 
     # Get only the newly generated tokens (after the input)
     input_length = input_ids.shape[1]
+    qwen_new_tokens = qwen_ids[0][input_length:]
+    fine_tuned_new_tokens = fine_tuned_ids[0][input_length:]
     policy_new_tokens = policy_ids[0][input_length:]
 
     # Decode only the new tokens
+    fine_tuned_summary = tokenizer.decode(fine_tuned_new_tokens, skip_special_tokens=True)
+    qwen_summary = tokenizer.decode(qwen_new_tokens, skip_special_tokens=True)
     policy_summary = tokenizer.decode(policy_new_tokens, skip_special_tokens=True)
-    return policy_summary
+    return qwen_summary, fine_tuned_summary, policy_summary
 
     
 def main():
@@ -118,18 +104,17 @@ def main():
     prompt = st.text(PROMPT_TEXT)
     
     if st.button("Generate Summaries"):
-        qwen_summary, fine_tuned_summary = generate_summary(qwen_model, fine_tuned_model, tokenizer, device)
+        qwen_summary, fine_tuned_summary, policy_summary = generate_summary(qwen_model, fine_tuned_model, policy_model, tokenizer, device)
         st.subheader("Human Written Summary:")
         st.text("My high school is forcing me to volunteer for the Salvation Army, an organisation I do not want to help. Can they do this? How do I avoid this?")
         st.subheader("Qwen Model Summary:")
         st.write(qwen_summary)
         st.subheader("Fine-tuned Model Summary:")
         st.write(fine_tuned_summary)
-
-    if st.button("Generate Policy Summary"):
-        policy_summary = generate_policy_summary(policy_model, tokenizer, device)
         st.subheader("Policy Summary:")
         st.write(policy_summary)
+        st.divider()
+        st.subheader("TLDR: We fixed the PPO massive loss bug but didn't have enough time to train 🙈")
 
 if __name__ == "__main__":
     main()
