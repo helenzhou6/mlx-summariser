@@ -8,49 +8,30 @@ MODEL_VERSION = 'v2'
 
 @st.cache_resource(show_spinner=False)
 def load_models():
-    init_wandb()
-    device = get_device()
-    
-    fine_tuned_path = load_artifact_path('base_lora_weights_6', MODEL_VERSION)
+    try:
+        init_wandb()
+        device = get_device()
+        fine_tuned_path = load_artifact_path('base_lora_weights_6', MODEL_VERSION)
 
-    # Load the base Qwen model
-    qwen_name = "Qwen/Qwen3-0.6B-Base"
-    
-    qwen_model = AutoModelForCausalLM.from_pretrained(qwen_name)
-    qwen_model.to(device)
-    qwen_model.eval()
+        # Load the base Qwen model
+        qwen_name = "Qwen/Qwen3-0.6B-Base"
+        qwen_model = AutoModelForCausalLM.from_pretrained(qwen_name)
+        qwen_model.to(device)
+        qwen_model.eval()
 
-    # Load the fine-tuned Lora model
+        # Load the fine-tuned Lora model
+        base_model = AutoModelForCausalLM.from_pretrained(qwen_name)
+        fine_tuned_model = PeftModel.from_pretrained(base_model, fine_tuned_path)
+        fine_tuned_model.to(device)
+        fine_tuned_model.eval()
 
-    # TODO: Uncomment when the model has been saved as LoRa weights
-    base_model = AutoModelForCausalLM.from_pretrained(qwen_name)
-    fine_tuned_model = PeftModel.from_pretrained(base_model, fine_tuned_path)
-    fine_tuned_model.to(device)
-    fine_tuned_model.eval()
+        tokenizer = AutoTokenizer.from_pretrained(qwen_name)
 
-    ### TEMPORARY
-    # qwen_tokenizer = AutoTokenizer.from_pretrained(qwen_name, trust_remote_code=True, padding_side='left')
-    # qwen_tokenizer.pad_token = qwen_tokenizer.eos_token
+        return qwen_model, fine_tuned_model, tokenizer, device
 
-    # qwen_model = AutoModelForCausalLM.from_pretrained(qwen_name)
-    # qwen_model.to(device)
-    # qwen_model.config.pad_token_id = qwen_tokenizer.eos_token_id
-    # lora_config = LoraConfig(
-    #     r=16, # rank - controls adapter size
-    #     lora_alpha=32,
-    #     target_modules=["q_proj", "v_proj", "k_proj", "o_proj"], # attention layers
-    #     lora_dropout=0.1,
-    #     bias="none",
-    #     task_type="CAUSAL_LM"
-    # )
-    # fine_tuned_model = get_peft_model(qwen_model, lora_config)
-
-    # fine_tuned_model.load_state_dict(torch.load(fine_tuned_path, map_location=device))
-    ###TEMPORARY
-
-    tokenizer = AutoTokenizer.from_pretrained(qwen_name)
-
-    return qwen_model, fine_tuned_model, tokenizer, device
+    except Exception as e:
+        st.error(f"Error loading models: {e}")
+        raise  # re-raise to stop execution if needed
 
 def generate_summary(prompt, qwen_model, fine_tuned_model, tokenizer, device):
     # Tokenize the input prompt
@@ -87,7 +68,6 @@ def generate_summary(prompt, qwen_model, fine_tuned_model, tokenizer, device):
 
     
 def main():
-
     qwen_model, fine_tuned_model, tokenizer, device = load_models()
     
     st.title("Qwen TLDR Summarizer")
