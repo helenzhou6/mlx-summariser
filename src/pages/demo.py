@@ -4,12 +4,18 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import streamlit as st
 from peft import LoraConfig, get_peft_model, PeftModel
 
-FINE_TUNED_MODEL_VERSION = 'v2'
-FINE_TUNED_PATH = 'base_lora_weights_6'
 QWEN_NAME = "Qwen/Qwen3-0.6B-Base"
 
-POLICY_MODEL_VERSION = "v10"
+FINE_TUNED_MODEL_VERSION = 'v2'
+FINE_TUNED_PATH = 'base_lora_weights_6'
+
+# Jibberish policy:
+# POLICY_MODEL_VERSION = "v10"
+# POLICY_MODEL_PATH = "popo_LoRA_epoch_0"
+
+POLICY_MODEL_VERSION = "v11"
 POLICY_MODEL_PATH = "popo_LoRA_epoch_0"
+
 PROMPT_TEXT = "Not sure if this goes here but I don't know where else to ask. My public high school has an event called \"project day\" every 6 weeks. It's a pass or fail grade, and it does count for a credit. I'm a senior, and this Friday we have to either volunteer for a retirement home, or volunteer for the Salvation Army. Students had an option for which organisation to assist with. However, this information was distributed via English classes, which I'm not a part of. Instead, I received a letter saying I'm signed up to volunteer for the Salvation Army by default as the retirement home had enough volunteers. I don't support the Salvation Army at all. They're one of the worst organisations out there in my opinion. I emailed my teacher asking to switch me for this exact reason, but she never responded. Can my school force me to volunteer or else they'll give me a failing grade? Who do I talk to so I don't have to volunteer for the Salvation Army?"
 
 @st.cache_resource(show_spinner=False)
