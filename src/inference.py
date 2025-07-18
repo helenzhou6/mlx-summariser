@@ -4,14 +4,14 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import streamlit as st
 from peft import LoraConfig, get_peft_model, PeftModel
 
-MODEL_VERSION = 'v0'
+MODEL_VERSION = 'v2'
 
 @st.cache_resource(show_spinner=False)
 def load_models():
     init_wandb()
     device = get_device()
     
-    fine_tuned_path = load_artifact_path('base_lora_weights_14', MODEL_VERSION)
+    fine_tuned_path = load_artifact_path('base_lora_weights_6', MODEL_VERSION)
 
     # Load the base Qwen model
     qwen_name = "Qwen/Qwen3-0.6B-Base"
@@ -54,6 +54,7 @@ def load_models():
 
 def generate_summary(prompt, qwen_model, fine_tuned_model, tokenizer, device):
     # Tokenize the input prompt
+    prompt = "Summarize: " + prompt + "\n Summary:"
     inputs = tokenizer(prompt, return_tensors='pt', truncation=True, max_length=550, padding='max_length')
     input_ids = inputs['input_ids'].to(device)
     attention_mask = inputs['attention_mask'].to(device)
