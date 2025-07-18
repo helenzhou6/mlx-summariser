@@ -2,6 +2,9 @@
 Task: Use the RLHF pipeline to create a summariser!
 Dataset: https://openaipublic.blob.core.windows.net/summarize-from-feedback/website/index.html#/
 
+See it working:
+<img width="819" height="929" alt="Screenshot 2025-07-18 at 11 47 58" src="https://github.com/user-attachments/assets/fe184f86-eb06-4a54-9d05-34ece2f7ddeb" />
+
 ## Pre-requisities 
 - Python 3.10
 - uv - install via https://github.com/astral-sh/uv
@@ -21,6 +24,9 @@ Dataset: https://openaipublic.blob.core.windows.net/summarize-from-feedback/webs
 
 ### Running it all:
 1. Run `uv run base_model.py` - the aim is that it will fine tune Qwen3-0.6B-Base on the OpenAI summarize reddit TLDR dataset. It will upload this base model to wandb.
+2. Run `uv run reward_model.py` - that will train the reward model and fine tune on OpenAI reject and acctepted TLDR dataset.
+3. Run `uv run ppo.py` - that will combine the above and it will use the reward model to train a policy
+4. Run `uv run streamlit run inference.py` to run inference
 
 ## Resources
 [Medium blogpost](https://medium.com/@Uvwxyz/rlhf-on-a-budget-gpt-2-for-summarization-39f9d016202b)
